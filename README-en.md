@@ -1,10 +1,10 @@
 # Name of the Project
 
-![Overzicht](./resources/media/Overview.jpg)
+![Overzicht](./resources/media/banner.png)
 
-## About the Project
+## Music-Reactive DMX Controller
 
-Brief description of the project: what it is, why it was created, and its main purpose.
+This project implements an embedded system on a PSoC6 that drives a DMX moving head and reacts to music input. The main purpose is to translate audio features such as beat, volume, and frequency content into expressive light movements, colors, and intensities.
 
 ### Sequence of Operation
 
@@ -29,7 +29,13 @@ Follow any additional instructions shown in the terminal or on the interface.
 > Avoid linking to external files (e.g. datasheets or images). Instead, store them locally in a `media` or `datasheets` folder. External links can break when the source changes or if this repository is renamed, forked, or cloned.
 
 
-- **Hardware**: list of components used (e.g. sensors, microcontrollers, actuators).
+- **Hardware**: 
+    - Fun Generation Pico Spot 20 LED (Moving Head Beam)
+    - CY8CKIT-062-WiFi-BT (PSOC 6 WiFi-BT Pioneer Kit)
+    - CY8CKIT-028-TFT (TFT Display Shield Board)
+    - Pico-2CH-RS485 (DMX module)
+    - Raspberry Pi Pico
+
 - **Software**: overview of languages, libraries and tools used.
 - **Methodology**: brief description of the approach taken.
 
@@ -62,5 +68,6 @@ Nothing more frustrating than finding good code but not knowing how to run it.
 
 ## People
 
-- **Contri Butor1** – _Student_ – [GitHub](https://github.com/CONTRIBUTOR1)
-- **Dieter Vanrykel** – _Teacher_ – [GitHub](https://github.com/Vanrykel)
+- **Mauro De Bruyn** – _Student_ – [GitHub](https://github.com/MauroDeBruyn)
+- **Lennert Engelen** – _Student_ – [GitHub](https://github.com/akalen06)
+- **Nick Driessen** – _Student_ – [GitHub](https://github.com/NickDriessen)
