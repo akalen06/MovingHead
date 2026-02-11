@@ -37,6 +37,11 @@ Follow any additional instructions shown in the terminal or on the interface.
     - Raspberry Pi Pico
 
 - **Software**: overview of languages, libraries and tools used.
+    - ModusToolbox
+    - C/C++
+    - Visual Studio Code
+    - Raspberry Pi Pico (vsCode extention)
+
 - **Methodology**: brief description of the approach taken.
 
 
