@@ -1,39 +1,93 @@
-> [!Tip]
->
-> Plaats hier **schema's, PCB's en BoM's**.
->
-> Structuur: `schematics/`, `pcb/`, `bom/`, `3d/`.
->
-> Noem gebruikte tools (bijv. KiCad, Eagle) in een README binnen deze map.
+# Hardware
 
+> Deze map bevat alle hardware-gerelateerde bestanden voor het project
 
-# Hardwareoverzicht
+---
 
-Dit document bevat een overzicht van de gebruikte hardwarecomponenten in dit project. Alle datasheets zijn lokaal opgeslagen in de map `/resources/datasheets/`.
+## 📂 Structuur
+
+```
+hardware/
+├── README.md              # Dit bestand
+├── schematics/           # KiCAD schema's
+│   └── [project].kicad_sch
+├── pcb/                  # KiCAD PCB ontwerp (indien van toepassing)
+│   └── [project].kicad_pcb
+└── datasheets/           # Componentdatasheets → Verplaats naar /docs/datasheets/
+```
+
+---
 
 ## 🧩 Componentenlijst
 
-| Componentnaam  | Functie             | Fabrikant       | Datasheet                                  | More info                          | Supplier                          |
-|----------------|---------------------|------------------|---------------------------------------------|-----------------------------------|-----------------------------------|
-| VL53L0X        | Afstandssensor      | STMicroelectronics | [VL53L0X.pdf](/resources/datasheets)     | [wiki.st.com](https://www.st.com/VL53L0X) | [mouser](mouser.be)                          |
-| NEMA 17        | Stappenmotor        | --               | [NEMA17.pdf](/resources/datasheets)       | --                                | [mouser](mouser.be)                          |
-| ESP32 DevKit   | Microcontroller     | Espressif        | [ESP32.pdf](/resources/datasheets)         | [docs.espressif.com](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html#introduction) | [mouser](mouser.be)                          |
+> **Update deze lijst met alle hardware componenten die jullie gebruiken**
 
-## 🔌 Aansluitschema
+| Component | Type/Model | Functie | Datasheet | Aantal |
+|-----------|-----------|---------|-----------|--------|
+| Microcontroller | PSoC 6 | Hoofdcontroller | [Link](/docs/datasheets/P5oK6.pdf) | 1 |
+| Sensor | [Type] | [Functie] | [Link](/docs/datasheets/) | 1 |
+| ... | ... | ... | ... | ... |
 
-> Voeg hier een afbeelding of diagram toe waarin de bedrading en verbindingen van de componenten worden weergegeven.
+**Vul deze tabel in met:**
+- Exacte type nummers
+- Wat elke component doet
+- Link naar datasheet (bewaar lokaal in `/docs/datasheets/`)
+- Aantal dat je nodig hebt
 
-- Bestand: `./schematics/wiringschema.png`
-- Alternatief: teken met [Fritzing](https://fritzing.org) en exporteer als PNG/SVG.
+---
 
-## 📏 Specificaties en toleranties
+## 🔌 Blokdiagram / Schema
 
-- Voedingsspanning: 5V via USB
-- Motorstroom: max. 1.2A
-- Sensorbereik: 20 mm – 2000 mm (VL53L0X)
-- Communicatie: I²C (3.3V-logica)
+**Schematisch overzicht:**
 
-## 📦 Reserve-onderdelen en versies
+> **Voeg hier een afbeelding of diagram toe waarin de bedrading en verbindingen van de componenten worden weergegeven.**
+>
+> - Voor week 1-2: Een handmatige schets is OK
+> - Later: Fritzing of KiCAD schematic export (PNG of PDF) 
 
-- Kalibratie uitgevoerd met firmwareversie `v1.0.3`.
-- ESP32 DevKit V4 (let op: oudere versies hebben andere pinout).
+---
+
+## ⚡ Specificaties
+
+### Voeding
+- **Spanning:** [bijv. 5V DC via USB]
+- **Stroomverbruik:** [bijv. max 500mA]
+- **Voedingsbron:** [bijv. USB powerbank]
+
+### Communicatie
+- **Protocollen:** [bijv. UART, I²C, SPI]
+- **Pinnen:** [lijst belangrijke pinnen]
+- **Logica level:** [bijv. 3.3V]
+
+---
+
+## 🔧 PCB Ontwerp (optioneel)
+
+**Alleen invullen als je een PCB ontwerpt**
+
+- **KiCAD versie:** [bijv. 7.0]
+- **Aantal lagen:** [bijv. 2-layer]
+- **Afmetingen:** [bijv. 100x80mm]
+- **Producent:** [bijv. JLCPCB]
+
+---
+
+## 📝 Aantekeningen
+
+**Belangrijke opmerkingen:**
+- ...
+- ...
+
+**Bekende problemen:**
+- ...
+- ...
+
+---
+
+## ✅ Checklist
+
+- [ ] Componentenlijst volledig ingevuld
+- [ ] Schema/blokdiagram toegevoegd
+- [ ] Datasheets lokaal opgeslagen in `/docs/datasheets/`
+- [ ] KiCAD project werkend
+- [ ] Specificaties gedocumenteerd
