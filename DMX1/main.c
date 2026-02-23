@@ -1,7 +1,7 @@
 #include "cybsp.h"
 #include "cyhal.h"
 
-#define DMX_UNIVERSE_SIZE 513  // 0 = startcode, 1..512 = channels
+#define DMX_UNIVERSE_SIZE 513   // 0 = startcode, 1..512 = channels
 #define DMX_START_CODE     0x00
 #define DMX_BAUDRATE       250000
 #define DMX_REFRESH_MS     30
@@ -22,7 +22,7 @@ static void dmx_init_buffer(void)
         dmx_buffer[i] = 0;
 }
 
-// UART init volledig in code (geen Device Configurator nodig)
+// UART init: volledig via HAL
 static cy_rslt_t dmx_uart_init(void)
 {
     cy_rslt_t result;
@@ -36,7 +36,7 @@ static cy_rslt_t dmx_uart_init(void)
         .rx_buffer_size = 0
     };
 
-    // TX = P5_1, RX/CTS/RTS onbenut → CYHAL_NC_PIN_VALUE
+    // TX = P5_1, RX/CTS/RTS niet gebruikt
     result = cyhal_uart_init(&uart_dmx,
                              P5_1,
                              CYHAL_NC_PIN_VALUE,
@@ -54,23 +54,26 @@ static cy_rslt_t dmx_uart_init(void)
     return CY_RSLT_SUCCESS;
 }
 
-
-// BREAK + MAB + data
+// BREAK + MAB + data frame
 static void dmx_send_frame(void)
 {
     size_t len = DMX_UNIVERSE_SIZE;
 
+    // 1) BREAK: TX low ~120 µs
     cyhal_uart_free(&uart_dmx);
     cyhal_gpio_init(P5_1, CYHAL_GPIO_DIR_OUTPUT, CYHAL_GPIO_DRIVE_STRONG, 0);
-    cyhal_system_delay_us(120);  // BREAK
+    cyhal_system_delay_us(200);  // >88 µs volgens DMX‑spec [web:63][web:38]
+	
+    // 2) MAB: TX high ~12 µs
     cyhal_gpio_write(P5_1, 1);
-    cyhal_system_delay_us(12);   // MAB
+    cyhal_system_delay_us(12);
 
+    // 3) UART opnieuw opzetten
     dmx_uart_init();
 
+    // 4) Frame sturen: startcode + 512 bytes
     cyhal_uart_write(&uart_dmx, dmx_buffer, &len);
 }
-
 
 int main(void)
 {
@@ -81,11 +84,13 @@ int main(void)
 
     if (dmx_uart_init() != CY_RSLT_SUCCESS)
     {
-        for(;;); // error
+        for (;;); // init error
     }
 
-    // Test: PicoSpot op adres 1, kanaal 8 (dimmer) full on
+    // Test: PicoSpot op adres 1, 9 kanaals mode
+    // Kanaal 8 = dimmer → 255 = full on. [web:21]
     dmx_set_channel(8, 255);
+	dmx_set_channel(6, 80);
 
     for (;;)
     {
