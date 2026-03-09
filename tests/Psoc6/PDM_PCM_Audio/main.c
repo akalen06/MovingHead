@@ -40,6 +40,7 @@
 * so agrees to indemnify Cypress against all liability.
 *******************************************************************************/
 
+#include "cy_syslib.h"
 #include "cyhal.h"
 #include "cybsp.h"
 #include "cy_retarget_io.h"
@@ -84,6 +85,11 @@ volatile bool pdm_pcm_flag = true;
 /* Volume variables */
 uint32_t volume = 0;
 uint32_t noise_threshold = THRESHOLD_HYSTERESIS;
+uint8_t state = 3;
+
+/* Lowpass Filter */
+float alpha = 0.01f;
+float filtered_sample = 0;
 
 /* HAL Object */
 cyhal_pdm_pcm_t pdm_pcm;
@@ -185,7 +191,14 @@ int main(void)
              * audio data from a frame */
             for (uint32_t index = 0; index < FRAME_SIZE; index++)
             {
-                volume += abs(audio_frame[index]);
+                float x = (float)audio_frame[index];
+
+				/* Low-pass filter */
+				filtered_sample = filtered_sample + alpha * (x - filtered_sample);
+				
+				/* Volume berekenen met gefilterde sample */
+				volume += abs((int16_t)filtered_sample);
+				
             }
 
             /* Prepare line to report the volume */
@@ -218,7 +231,24 @@ int main(void)
             button_flag = false;
 
             /* Get the current volume and add a hysteresis as the new threshold */
-            noise_threshold = (volume/VOLUME_RATIO) + THRESHOLD_HYSTERESIS;
+            //noise_threshold = (volume/VOLUME_RATIO) + THRESHOLD_HYSTERESIS;
+            
+            state++;
+            if (state > 2)
+            	state = 0;
+            
+            switch (state) 
+            {
+				case 0:
+					noise_threshold = 10;
+				break;
+				case 1:
+					noise_threshold = 20;
+				break;
+				case 2:
+					noise_threshold = 30;
+				break;	
+			}
 
             /* Report the new noise threshold over UART */
             printf("\n\rNoise threshold: %lu\n\r", (unsigned long) noise_threshold);
