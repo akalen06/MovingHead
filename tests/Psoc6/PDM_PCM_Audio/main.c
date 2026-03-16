@@ -40,12 +40,17 @@
 * so agrees to indemnify Cypress against all liability.
 *******************************************************************************/
 
+#include "cy_result.h"
 #include "cy_syslib.h"
+#include "cybsp_types.h"
+#include "cycfg_pins.h"
 #include "cyhal.h"
 #include "cybsp.h"
 #include "cy_retarget_io.h"
 
 #include "stdlib.h"
+#include <stdio.h>
+#include <time.h>
 
 /*******************************************************************************
 * Macros
@@ -101,7 +106,7 @@ const cyhal_pdm_pcm_cfg_t pdm_pcm_cfg =
 {
     .sample_rate     = SAMPLE_RATE_HZ,
     .decimation_rate = DECIMATION_RATE,
-    .mode            = CYHAL_PDM_PCM_MODE_STEREO, 
+    .mode            = CYHAL_PDM_PCM_MODE_STEREO,
     .word_length     = 16,  /* bits */
     .left_gain       = 0,   /* dB */
     .right_gain      = 0,   /* dB */
@@ -155,8 +160,11 @@ int main(void)
     /* Initialize retarget-io to use the debug UART port */
     cy_retarget_io_init(CYBSP_DEBUG_UART_TX, CYBSP_DEBUG_UART_RX, CY_RETARGET_IO_BAUDRATE);
 
-    /* Initialize the User LED */
+    /* Initialize the LED's */
     cyhal_gpio_init(CYBSP_USER_LED, CYHAL_GPIO_DIR_OUTPUT, CYHAL_GPIO_DRIVE_STRONG, CYBSP_LED_STATE_OFF);
+    cyhal_gpio_init(CYBSP_LED_RGB_RED, CYHAL_GPIO_DIR_OUTPUT, CYHAL_GPIO_DRIVE_STRONG, CYBSP_LED_STATE_OFF);
+    cyhal_gpio_init(CYBSP_LED_RGB_GREEN, CYHAL_GPIO_DIR_OUTPUT, CYHAL_GPIO_DRIVE_STRONG, CYBSP_LED_STATE_OFF);
+    cyhal_gpio_init(CYBSP_LED_RGB_BLUE, CYHAL_GPIO_DIR_OUTPUT, CYHAL_GPIO_DRIVE_STRONG, CYBSP_LED_STATE_OFF);
 
     /* Initialize the User Button */
     cyhal_gpio_init(CYBSP_USER_BTN, CYHAL_GPIO_DIR_INPUT, CYHAL_GPIO_DRIVE_PULLUP, CYBSP_BTN_OFF);
@@ -214,11 +222,39 @@ int main(void)
             if ((volume/VOLUME_RATIO) > noise_threshold)
             {
                 cyhal_gpio_write((cyhal_gpio_t) CYBSP_USER_LED, CYBSP_LED_STATE_ON);
+                
+                int rgb = rand()%4;
+                
+                
+                switch (rgb) 
+                {
+					case 0:
+						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_ON);
+						cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_OFF);
+						cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_OFF);
+					break;
+					case 1:
+						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_OFF);
+						cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_ON);
+						cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_OFF);
+					break;
+					case 2:
+						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_OFF);
+						cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_OFF);
+						cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_ON);
+					break;
+					case 3:
+						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_ON);
+						cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_ON);
+						cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_ON);
+					break;
+				}
             }
             else
             {
                 cyhal_gpio_write((cyhal_gpio_t) CYBSP_USER_LED, CYBSP_LED_STATE_OFF);
             }
+            
 
             /* Setup to read the next frame */
             cyhal_pdm_pcm_read_async(&pdm_pcm, audio_frame, FRAME_SIZE);
@@ -237,21 +273,25 @@ int main(void)
             if (state > 2)
             	state = 0;
             
-            switch (state) 
+            switch (state)
             {
 				case 0:
 					noise_threshold = 10;
+					alpha = 0.5;
 				break;
 				case 1:
-					noise_threshold = 20;
+					noise_threshold = 10;
+					alpha = 0.05;
 				break;
 				case 2:
-					noise_threshold = 30;
+					noise_threshold = 10; // <---- ?
+					alpha = 0.005;
 				break;	
 			}
 
             /* Report the new noise threshold over UART */
             printf("\n\rNoise threshold: %lu\n\r", (unsigned long) noise_threshold);
+            printf("\n\rFliter strength: %f\n\r", alpha);
         }
 
         cyhal_syspm_sleep();
