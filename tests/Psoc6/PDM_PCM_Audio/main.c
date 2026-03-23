@@ -49,20 +49,24 @@
 #include "cy_retarget_io.h"
 
 #include "stdlib.h"
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
+#include "arm_math.h"
 
 /*******************************************************************************
 * Macros
 ********************************************************************************/
 /* Define how many samples in a frame */
-#define FRAME_SIZE                  (1024)
+#define FRAME_SIZE                  (256)
 /* Noise threshold hysteresis */
-#define THRESHOLD_HYSTERESIS        3u
+#define THRESHOLD_HYSTERESIS        5000000u
 /* Volume ratio for noise and print purposes */
 #define VOLUME_RATIO                (4*FRAME_SIZE)
 /* Desired sample rate. Typical values: 8/16/22.05/32/44.1/48kHz */
-#define SAMPLE_RATE_HZ              8000u
+#define SAMPLE_RATE_HZ              16000u
 /* Decimation Rate of the PDM/PCM block. Typical value is 64 */
 #define DECIMATION_RATE             64u
 /* Audio Subsystem Clock. Typical values depends on the desire sample rate:
@@ -72,6 +76,11 @@
 /* PDM/PCM Pins */
 #define PDM_DATA                    P10_5
 #define PDM_CLK                     P10_4
+
+
+#define BEAT_THRESHOLD 1000000
+
+float prev_energy = 0;
 
 /*******************************************************************************
 * Function Prototypes
@@ -84,13 +93,17 @@ void clock_init(void);
 * Global Variables
 ********************************************************************************/
 /* Interrupt flags */
-volatile bool button_flag = false;
+volatile bool button_flag = true;
 volatile bool pdm_pcm_flag = true;
 
 /* Volume variables */
 uint32_t volume = 0;
 uint32_t noise_threshold = THRESHOLD_HYSTERESIS;
 uint8_t state = 3;
+
+// rgb lights
+uint8_t rgb = 0;
+uint8_t prev;
 
 /* Lowpass Filter */
 float alpha = 0.01f;
@@ -193,40 +206,45 @@ int main(void)
             pdm_pcm_flag = 0;
 
             /* Reset the volume */
-            volume = 0;
+            float energy = 0;
 
-            /* Calculate the volume by summing the absolute value of all the 
-             * audio data from a frame */
-            for (uint32_t index = 0; index < FRAME_SIZE; index++)
-            {
-                float x = (float)audio_frame[index];
-
-				/* Low-pass filter */
-				filtered_sample = filtered_sample + alpha * (x - filtered_sample);
-				
-				/* Volume berekenen met gefilterde sample */
-				volume += abs((int16_t)filtered_sample);
-				
-            }
-
+			for (uint32_t i = 0; i < FRAME_SIZE; i++)
+			{
+			    float sample = (float)audio_frame[i];
+			    energy += sample * sample;
+			}
+			
+			energy /= FRAME_SIZE;
+			
+			float diff = energy - prev_energy;
+			prev_energy = energy;
+			
             /* Prepare line to report the volume */
-            printf("\n\r");
+            //printf("\n\r");
 
             /* Report the volume */
+            /*
             for (uint32_t index = 0; index < (volume/VOLUME_RATIO); index++)
             {
                 printf("-");
             }
+            */
 
             /* Turn ON the LED when the volume is higher than the threshold */
-            if ((volume/VOLUME_RATIO) > noise_threshold)
+            if (diff > noise_threshold)
             {
                 cyhal_gpio_write((cyhal_gpio_t) CYBSP_USER_LED, CYBSP_LED_STATE_ON);
                 
-                int rgb = rand()%4;
+                prev = rgb;
                 
+                rgb = rand()%4;
                 
-                switch (rgb) 
+                if(rgb == prev && rgb != 0)
+                	--rgb;
+				else if (rgb == prev)
+					rgb++;
+
+                switch (rgb)
                 {
 					case 0:
 						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_ON);
@@ -270,30 +288,25 @@ int main(void)
             //noise_threshold = (volume/VOLUME_RATIO) + THRESHOLD_HYSTERESIS;
             
             state++;
-            if (state > 2)
+            if (state > 8)
             	state = 0;
             
-            switch (state)
-            {
-				case 0:
-					noise_threshold = 10;
-					alpha = 0.5;
-				break;
-				case 1:
-					noise_threshold = 10;
-					alpha = 0.05;
-				break;
-				case 2:
-					noise_threshold = 10; // <---- ?
-					alpha = 0.005;
-				break;	
+			switch (state)
+			{
+			    case 0: noise_threshold = 50000; break;
+			    case 1: noise_threshold = 30000; break;
+			    case 2: noise_threshold = 20000; break;
+			    case 3: noise_threshold = 15000; break;
+			    case 4: noise_threshold = 10000; break;
+			    case 5: noise_threshold = 7000;  break;
+			    case 6: noise_threshold = 5000;  break;
+			    case 7: noise_threshold = 3000;  break;
+			    case 8: noise_threshold = 2000;  break;
 			}
 
             /* Report the new noise threshold over UART */
             printf("\n\rNoise threshold: %lu\n\r", (unsigned long) noise_threshold);
-            printf("\n\rFliter strength: %f\n\r", alpha);
         }
-
         cyhal_syspm_sleep();
 
     }
