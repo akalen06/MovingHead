@@ -8,7 +8,7 @@
 #define DMX_UNIVERSE_SIZE   513
 #define DMX_START_CODE      0x00
 #define DMX_BAUDRATE        250000
-#define DMX_REFRESH_MS      20      // iets sneller, makkelijker scope
+#define DMX_REFRESH_MS      20      
 #define DMX_BREAK_US        200
 #define DMX_MAB_US          12
 
@@ -39,8 +39,7 @@ static void dmx_set_channel(uint16_t ch, uint8_t value)
     dmx_buffer[ch] = value;
 }
 
-/* UART init met HAL – zelfde principe als je testcode */
-static cy_rslt_t dmx_uart_init(void)
+static cy_rslt_t dmx_uart_init(void) // UART INIT USING HAL (comes from hal example)
 {
     cy_rslt_t result;
 
@@ -53,7 +52,7 @@ static cy_rslt_t dmx_uart_init(void)
         .rx_buffer_size = 0
     };
 
-    /* Let op: hier dezelfde pins gebruiken als je werkende testcode */
+    
     result = cyhal_uart_init(&uart_obj,
                              CYBSP_DEBUG_UART_TX,
                              CYBSP_DEBUG_UART_RX,
@@ -134,38 +133,45 @@ int main(void)
 
     /* Voorbeeldkanalen voor PicoSpot (9 kanaals modus) */
     uint16_t addr = PICOSPOT_ADDRESS;
-    dmx_set_channel(addr + 0, 128);   // Pan midden
-    dmx_set_channel(addr + 1, 128);   // Tilt midden
-    dmx_set_channel(addr + 2, 0);     // Pan fine
-    dmx_set_channel(addr + 3, 0);     // Tilt fine
-    dmx_set_channel(addr + 4, 0);     // Speed
-    dmx_set_channel(addr + 5, 0);     // Color
-    dmx_set_channel(addr + 6, 0);     // Gobo
-    dmx_set_channel(addr + 7, 255);   // Dimmer full
-    dmx_set_channel(addr + 8, 0);     // Shutter open
-
-    uint8_t color_value = 0;
-    int color_dir = 1;
-    uint32_t frame_count = 0;
-
     for (;;)
+{
+    // Scene 1
+    for (int i = 1; i <= 512; i++) dmx_buffer[i] = 0;
+
+    dmx_set_channel(addr + 0, 128);  // pan
+    dmx_set_channel(addr + 1, 128);  // tilt
+    dmx_set_channel(addr + 2, 0);    // pan fine
+    dmx_set_channel(addr + 3, 0);    // tilt fine
+    dmx_set_channel(addr + 4, 0);    // speed
+    dmx_set_channel(addr + 5, 70);   // color
+    dmx_set_channel(addr + 6, 0);    // gobo
+    dmx_set_channel(addr + 7, 250);  // dimmer
+    dmx_set_channel(addr + 8, 0);    // shutter
+
+    for (int i = 0; i < 100; i++)    // ~2 s @ 20 ms per frame
     {
-        dmx_send_frame();                 // stuurt continu frames, goed zichtbaar op scope
-
-        /* Eenvoudige kleur‑animatie */
-        if ((frame_count % 10) == 0)
-        {
-            color_value += color_dir;
-            if (color_value == 0 || color_value == 255)
-                color_dir = -color_dir;
-
-            dmx_set_channel(addr + 5, color_value);
-        }
-
-        cyhal_gpio_toggle(CYBSP_USER_LED);
-		Cy_SysLib_Delay(100);	
-
-        Cy_SysLib_Delay(DMX_REFRESH_MS);
-        frame_count++;
+        dmx_send_frame();
+        Cy_SysLib_Delay(20);
     }
+
+    // Scene 2
+    for (int i = 1; i <= 512; i++) dmx_buffer[i] = 0;
+
+    dmx_set_channel(addr + 0, 150);
+    dmx_set_channel(addr + 1, 150);
+    dmx_set_channel(addr + 2, 0);
+    dmx_set_channel(addr + 3, 0);
+    dmx_set_channel(addr + 4, 0);
+    dmx_set_channel(addr + 5, 15);   // andere kleur
+    dmx_set_channel(addr + 6, 0);
+    dmx_set_channel(addr + 7, 250);
+    dmx_set_channel(addr + 8, 0);
+
+    for (int i = 0; i < 100; i++)
+    {
+        dmx_send_frame();
+        Cy_SysLib_Delay(20);
+    }
+}
+
 }
