@@ -82,7 +82,7 @@ Main programma loop:
 
 ## 📚 Resources
 
-- [PSoC 6 Datasheet](/docs/datasheets/P5oK6.pdf)
+- [PSoC 6 Datasheet](/docs/datasheets/infineon-cy8ckit-062-wifi-bt-psoc-6-wifi-bt-pioneer-kit-guide-usermanual-en.pdf)
 
 ## ✅ Checklist
 

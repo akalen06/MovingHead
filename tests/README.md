@@ -1,6 +1,6 @@
 # Tests Folder
 
-Deze folder bevat alle test bestanden of tools voor het project.
+This folder contains all test files for the project.
 
 1. **Test één ding:** Elke test test één specifieke functionaliteit
 3. **Beschrijvende namen:** Test names moeten duidelijk zijn wat er getest wordt

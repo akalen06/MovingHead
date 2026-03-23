@@ -1,44 +1,41 @@
 # Hardware
 
-> Deze map bevat alle hardware-gerelateerde bestanden voor het project
+> This folder contains all hardware-related files for the project
 
 ---
 
-## 📂 Structuur
+## 📂 Structure
 
 ```
 hardware/
-├── README.md              # Dit bestand
-├── schematics/           # KiCAD schema's
-│   └── [project].kicad_sch
-├── pcb/                  # KiCAD PCB ontwerp (indien van toepassing)
-│   └── [project].kicad_pcb
-└── datasheets/           # Componentdatasheets → Verplaats naar /docs/datasheets/
+├── README.md              # This file
+└── schematics/           # Schematics
+    └── [project].kicad_sch
 ```
 
 ---
 
-## 🧩 Componentenlijst
+## 🧩 List of components
 
-> **Update deze lijst met alle hardware componenten die jullie gebruiken**
+> **Update this list with all hardware components**
 
-| Component | Type/Model | Functie | Datasheet | Aantal |
+| Component | Type/Model | Function | Datasheet | Amount |
 |-----------|-----------|---------|-----------|--------|
-| Microcontroller | PSoC 6 | Hoofdcontroller | [Link](/docs/datasheets/P5oK6.pdf) | 1 |
-| Sensor | [Type] | [Functie] | [Link](/docs/datasheets/) | 1 |
+| Microcontroller | PSoC 6 | Main controller | [Link](/docs/datasheets/infineon-cy8ckit-062-wifi-bt-psoc-6-wifi-bt-pioneer-kit-guide-usermanual-en.pdf) | 1 |
+| Microcontroller | Raspberry Pi Pico | DMX Slave | [Link](/docs/datasheets/RP-008307-DS-1-pico-datasheet.pdf) | 1 |
+| Module | Pico-2CH-RS485 | UART To RS485 | [Link](/docs/datasheets/Pico2CHRS485.md) | 1 |
+| Light | Pico Spot 20 LED | Movinghead | [Link](/docs/datasheets/PicoSpot20LED.md) | 1 |
+| LED | WS2812B | LED Strip | [Link] | / |
 | ... | ... | ... | ... | ... |
 
-**Vul deze tabel in met:**
-- Exacte type nummers
-- Wat elke component doet
-- Link naar datasheet (bewaar lokaal in `/docs/datasheets/`)
-- Aantal dat je nodig hebt
+
 
 ---
 
-## 🔌 Blokdiagram / Schema
+## 🔌 Blokdiagram / Schematic
 
-**Schematisch overzicht:**
+**Schematic overview:**
+![](../docs/images/Software%20Diagram%20Music.jpg)
 
 > **Voeg hier een afbeelding of diagram toe waarin de bedrading en verbindingen van de componenten worden weergegeven.**
 >
@@ -47,28 +44,17 @@ hardware/
 
 ---
 
-## ⚡ Specificaties
+## ⚡ Specifications
 
-### Voeding
-- **Spanning:** [bijv. 5V DC via USB]
-- **Stroomverbruik:** [bijv. max 500mA]
-- **Voedingsbron:** [bijv. USB powerbank]
+### Power
+- **Voltage:** [bijv. 5V DC via USB]
+- **Current:** [bijv. max 500mA]
+- **Power supply:** [bijv. USB powerbank]
 
-### Communicatie
+### Communication
 - **Protocollen:** [bijv. UART, I²C, SPI]
-- **Pinnen:** [lijst belangrijke pinnen]
+- **Pins:** [lijst belangrijke pinnen]
 - **Logica level:** [bijv. 3.3V]
-
----
-
-## 🔧 PCB Ontwerp (optioneel)
-
-**Alleen invullen als je een PCB ontwerpt**
-
-- **KiCAD versie:** [bijv. 7.0]
-- **Aantal lagen:** [bijv. 2-layer]
-- **Afmetingen:** [bijv. 100x80mm]
-- **Producent:** [bijv. JLCPCB]
 
 ---
 
