@@ -18,6 +18,11 @@ This section explains what to expect once all hardware and software has been set
 
 Follow any additional instructions shown in the terminal or on the interface.
 
+## Technical information
+
+- No audio mapping yet (EPIC2.3) 
+- DMX send frame = ~42ms -> Data: 513 bytes x 11bits/byte at 250kbaud -> 22-23ms, add the additional 20ms DMX_REFRESH_MS and you're at 42ms
+- tilt, color, etc is being controlled dmx_set_channel, channel 1 through 9 have their own functionality: ch 5 = color, ch 7 = dimmer, ...
 
 
 ## Materials and Methods
