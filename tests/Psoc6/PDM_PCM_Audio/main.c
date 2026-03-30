@@ -219,21 +219,11 @@ int main(void)
 			float diff = energy - prev_energy;
 			prev_energy = energy;
 			
-            /* Prepare line to report the volume */
-            //printf("\n\r");
-
-            /* Report the volume */
-            /*
-            for (uint32_t index = 0; index < (volume/VOLUME_RATIO); index++)
-            {
-                printf("-");
-            }
-            */
-
-            /* Turn ON the LED when the volume is higher than the threshold */
+            
             if (diff > noise_threshold)
             {
                 cyhal_gpio_write((cyhal_gpio_t) CYBSP_USER_LED, CYBSP_LED_STATE_ON);
+                //printf("noice level = %f\n\r", energy);
                 
                 prev = rgb;
                 
@@ -293,15 +283,15 @@ int main(void)
             
 			switch (state)
 			{
-			    case 0: noise_threshold = 50000; break;
-			    case 1: noise_threshold = 30000; break;
-			    case 2: noise_threshold = 20000; break;
-			    case 3: noise_threshold = 15000; break;
-			    case 4: noise_threshold = 10000; break;
-			    case 5: noise_threshold = 7000;  break;
-			    case 6: noise_threshold = 5000;  break;
-			    case 7: noise_threshold = 3000;  break;
-			    case 8: noise_threshold = 2000;  break;
+			    case 0: noise_threshold = 500000; break;
+			    case 1: noise_threshold = 300000; break;
+			    case 2: noise_threshold = 250000; break;
+			    case 3: noise_threshold = 200000; break;
+			    case 4: noise_threshold = 150000; break;
+			    case 5: noise_threshold = 100000;  break;
+			    case 6: noise_threshold = 50000;  break;
+			    case 7: noise_threshold = 30000;  break;
+			    case 8: noise_threshold = 20000;  break;
 			}
 
             /* Report the new noise threshold over UART */
