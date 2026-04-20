@@ -109,6 +109,20 @@ uint8_t prev;
 float alpha = 0.01f;
 float filtered_sample = 0;
 
+float envelope = 0;
+float avg_energy = 0;
+float threshold = 0;
+
+float alpha_env = 0.1f;     // envelope smoothing
+float alpha_avg = 0.01f;    // langzame gemiddelde
+
+uint32_t last_beat_time = 0;
+#define REFRACTORY_MS 200   // max 5 beats/sec
+
+#define THRESHOLD_FACTOR 1.5f
+
+cyhal_timer_t timer;
+
 /* HAL Object */
 cyhal_pdm_pcm_t pdm_pcm;
 cyhal_clock_t   audio_clock;
@@ -169,6 +183,23 @@ int main(void)
 
     /* Init the clocks */
     clock_init();
+    
+    cyhal_timer_cfg_t cfg = {
+    .compare_value = 0,
+    .period = 0xFFFFFFFF,
+    .direction = CYHAL_TIMER_DIR_UP,
+    .is_compare = false,
+    .is_continuous = true,
+    .value = 0
+	};
+	
+	cyhal_timer_init(&timer, NC, NULL);
+	cyhal_timer_configure(&timer, &cfg);
+	
+	// Clock op 1 MHz → 1 tick = 1 µs
+	cyhal_timer_set_frequency(&timer, 1000000);
+	cyhal_timer_start(&timer);
+
 
     /* Initialize retarget-io to use the debug UART port */
     cy_retarget_io_init(CYBSP_DEBUG_UART_TX, CYBSP_DEBUG_UART_RX, CY_RETARGET_IO_BAUDRATE);
@@ -216,52 +247,60 @@ int main(void)
 			
 			energy /= FRAME_SIZE;
 			
-			float diff = energy - prev_energy;
-			prev_energy = energy;
+			// Envelope (snelle reactie)
+			envelope = alpha_env * energy + (1 - alpha_env) * envelope;
 			
-            
-            if (diff > noise_threshold)
-            {
-                cyhal_gpio_write((cyhal_gpio_t) CYBSP_USER_LED, CYBSP_LED_STATE_ON);
-                //printf("noice level = %f\n\r", energy);
-                
-                prev = rgb;
-                
-                rgb = rand()%4;
-                
-                if(rgb == prev && rgb != 0)
-                	--rgb;
-				else if (rgb == prev)
-					rgb++;
-
-                switch (rgb)
-                {
-					case 0:
-						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_ON);
-						cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_OFF);
-						cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_OFF);
-					break;
-					case 1:
-						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_OFF);
-						cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_ON);
-						cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_OFF);
-					break;
-					case 2:
-						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_OFF);
-						cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_OFF);
-						cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_ON);
-					break;
-					case 3:
-						cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_ON);
-						cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_ON);
-						cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_ON);
-					break;
-				}
-            }
-            else
-            {
-                cyhal_gpio_write((cyhal_gpio_t) CYBSP_USER_LED, CYBSP_LED_STATE_OFF);
-            }
+			// Gemiddelde (langzaam)
+			avg_energy = alpha_avg * energy + (1 - alpha_avg) * avg_energy;
+			
+			// Adaptieve threshold
+			threshold = avg_energy * THRESHOLD_FACTOR;
+			
+			// Tijd (ms)
+			uint32_t now = cyhal_timer_read(&timer) / 1000; // ms
+			
+			if ((envelope > threshold) && (now - last_beat_time > REFRACTORY_MS))
+			{
+			    last_beat_time = now;
+			
+			    cyhal_gpio_write(CYBSP_USER_LED, CYBSP_LED_STATE_ON);
+			
+			    prev = rgb;
+			    rgb = rand() % 4;
+			
+			    if(rgb == prev && rgb != 0)
+			        --rgb;
+			    else if (rgb == prev)
+			        rgb++;
+			
+			    switch (rgb)
+			    {
+			        case 0:
+			            cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_ON);
+			            cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_OFF);
+			            cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_OFF);
+			            break;
+			        case 1:
+			            cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_OFF);
+			            cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_ON);
+			            cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_OFF);
+			            break;
+			        case 2:
+			            cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_OFF);
+			            cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_OFF);
+			            cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_ON);
+			            break;
+			        case 3:
+			            cyhal_gpio_write(CYBSP_LED_RGB_RED, CYBSP_LED_STATE_ON);
+			            cyhal_gpio_write(CYBSP_LED_RGB_GREEN, CYBSP_LED_STATE_ON);
+			            cyhal_gpio_write(CYBSP_LED_RGB_BLUE, CYBSP_LED_STATE_ON);
+			            break;
+			    }
+			}
+			else
+			{
+			    cyhal_gpio_write(CYBSP_USER_LED, CYBSP_LED_STATE_OFF);
+			}
             
 
             /* Setup to read the next frame */
@@ -288,7 +327,7 @@ int main(void)
 			    case 2: noise_threshold = 250000; break;
 			    case 3: noise_threshold = 200000; break;
 			    case 4: noise_threshold = 150000; break;
-			    case 5: noise_threshold = 100000;  break;
+			    case 5: noise_threshold = 100000; break;
 			    case 6: noise_threshold = 50000;  break;
 			    case 7: noise_threshold = 30000;  break;
 			    case 8: noise_threshold = 20000;  break;
