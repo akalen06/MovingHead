@@ -3,6 +3,9 @@
 #include "cybsp.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 
 /* DMX parameters */
 #define DMX_UNIVERSE_SIZE   513
@@ -12,13 +15,22 @@
 #define DMX_BREAK_US        200
 #define DMX_MAB_US          12
 
-#define PICOSPOT_ADDRESS    1       // startadres fixture
+#define PICOSPOT_ADDRESS    1
 
 /* UART object + buffer */
 static cyhal_uart_t uart_obj;
 static uint8_t dmx_buffer[DMX_UNIVERSE_SIZE];
 
-/* Eenvoudige error handler */
+/* FreeRTOS */
+static QueueHandle_t dmxCommandQueue;
+
+/* DMX command struct */
+typedef struct {
+    uint16_t address;
+    uint8_t channel_values[9];
+} dmx_command_t;
+
+/* Error handler */
 static void handle_error(void)
 {
     CY_ASSERT(0);
@@ -32,14 +44,15 @@ static void dmx_init_buffer(void)
         dmx_buffer[i] = 0;
 }
 
-/* Kanaal instellen (1..512) */
+/* Set channel */
 static void dmx_set_channel(uint16_t ch, uint8_t value)
 {
     if (ch < 1 || ch > 512) return;
     dmx_buffer[ch] = value;
 }
 
-static cy_rslt_t dmx_uart_init(void) // UART INIT USING HAL (comes from hal example)
+/* UART init */
+static cy_rslt_t dmx_uart_init(void)
 {
     cy_rslt_t result;
 
@@ -52,7 +65,6 @@ static cy_rslt_t dmx_uart_init(void) // UART INIT USING HAL (comes from hal exam
         .rx_buffer_size = 0
     };
 
-    
     result = cyhal_uart_init(&uart_obj,
                              CYBSP_DEBUG_UART_TX,
                              CYBSP_DEBUG_UART_RX,
@@ -70,41 +82,109 @@ static cy_rslt_t dmx_uart_init(void) // UART INIT USING HAL (comes from hal exam
     return CY_RSLT_SUCCESS;
 }
 
-/* BREAK + MAB met HAL-GPIO, zo licht mogelijk */
+/* BREAK + MAB */
 static void dmx_send_break_mab(void)
 {
-    /* UART tijdelijk loslaten, maar uart_obj NIET vernietigen */
-    cyhal_uart_free(&uart_obj);   // maakt de pin weer vrij
+    cyhal_uart_free(&uart_obj);
 
-    /* TX-pin als GPIO configureren */
     cyhal_gpio_init(CYBSP_DEBUG_UART_TX,
                     CYHAL_GPIO_DIR_OUTPUT,
                     CYHAL_GPIO_DRIVE_STRONG,
-                    1);          // idle hoog
+                    1);
 
-    /* BREAK: lijn laag */
     cyhal_gpio_write(CYBSP_DEBUG_UART_TX, 0);
     Cy_SysLib_DelayUs(DMX_BREAK_US);
 
-    /* MAB: lijn hoog */
     cyhal_gpio_write(CYBSP_DEBUG_UART_TX, 1);
     Cy_SysLib_DelayUs(DMX_MAB_US);
 
-    /* GPIO vrijgeven (optioneel) */
     cyhal_gpio_free(CYBSP_DEBUG_UART_TX);
 
-    /* UART direct opnieuw initialiseren */
     if (dmx_uart_init() != CY_RSLT_SUCCESS)
         handle_error();
 }
 
-/* Eén volledig DMX-frame versturen */
+/* Send DMX frame */
 static void dmx_send_frame(void)
 {
     size_t len = DMX_UNIVERSE_SIZE;
 
-    dmx_send_break_mab();                         // break + MAB
-    cyhal_uart_write(&uart_obj, dmx_buffer, &len); // blokkerend send, 8N2
+    dmx_send_break_mab();
+    cyhal_uart_write(&uart_obj, dmx_buffer, &len);
+}
+
+/* DMX Task (REAL-TIME CORE) */
+static void dmx_task(void *pvParameters)
+{
+    (void) pvParameters;
+
+    dmx_command_t current_cmd = {0};
+    dmx_command_t new_cmd;
+
+    dmx_init_buffer();
+
+    for (;;)
+    {
+        /* Check for new command (non-blocking!) */
+        if (xQueueReceive(dmxCommandQueue, &new_cmd, 0) == pdPASS)
+        {
+            current_cmd = new_cmd;
+
+            /* Clear buffer */
+            for (int i = 1; i <= 512; i++)
+                dmx_buffer[i] = 0;
+
+            /* Apply channels */
+            for (int i = 0; i < 9; i++)
+                dmx_set_channel(current_cmd.address + i,
+                                current_cmd.channel_values[i]);
+        }
+
+        /* Always send frame */
+        dmx_send_frame();
+
+        vTaskDelay(pdMS_TO_TICKS(DMX_REFRESH_MS));
+    }
+}
+
+/* Scene Task (replaces while-loop from code 1) */
+static void scene_task(void *pvParameters)
+{
+    (void) pvParameters;
+
+    dmx_command_t cmd;
+    cmd.address = PICOSPOT_ADDRESS;
+
+    for (;;)
+    {
+        /* Scene 1 */
+        cmd.channel_values[0] = 128;
+        cmd.channel_values[1] = 128;
+        cmd.channel_values[2] = 0;
+        cmd.channel_values[3] = 0;
+        cmd.channel_values[4] = 0;
+        cmd.channel_values[5] = 70;
+        cmd.channel_values[6] = 0;
+        cmd.channel_values[7] = 250;
+        cmd.channel_values[8] = 0;
+
+        xQueueSend(dmxCommandQueue, &cmd, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        /* Scene 2 */
+        cmd.channel_values[0] = 150;
+        cmd.channel_values[1] = 150;
+        cmd.channel_values[2] = 0;
+        cmd.channel_values[3] = 0;
+        cmd.channel_values[4] = 0;
+        cmd.channel_values[5] = 15;
+        cmd.channel_values[6] = 0;
+        cmd.channel_values[7] = 250;
+        cmd.channel_values[8] = 0;
+
+        xQueueSend(dmxCommandQueue, &cmd, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
 }
 
 /* MAIN */
@@ -118,60 +198,21 @@ int main(void)
 
     __enable_irq();
 
-    /* User LED init voor feedback */
-    cyhal_gpio_init(CYBSP_USER_LED,
-                    CYHAL_GPIO_DIR_OUTPUT,
-                    CYHAL_GPIO_DRIVE_STRONG,
-                    1);
-
-    dmx_init_buffer();
-
-    /* Init UART (eerste keer) */
-    result = dmx_uart_init();
-    if (result != CY_RSLT_SUCCESS)
+    /* UART init */
+    if (dmx_uart_init() != CY_RSLT_SUCCESS)
         handle_error();
 
-    /* Voorbeeldkanalen voor PicoSpot (9 kanaals modus) */
-    uint16_t addr = PICOSPOT_ADDRESS;
-    for (;;)
-{
-    // Scene 1
-    for (int i = 1; i <= 512; i++) dmx_buffer[i] = 0;
+    /* Create queue */
+    dmxCommandQueue = xQueueCreate(5, sizeof(dmx_command_t));
+    if (dmxCommandQueue == NULL)
+        handle_error();
 
-    dmx_set_channel(addr + 0, 128);  // pan
-    dmx_set_channel(addr + 1, 128);  // tilt
-    dmx_set_channel(addr + 2, 0);    // pan fine
-    dmx_set_channel(addr + 3, 0);    // tilt fine
-    dmx_set_channel(addr + 4, 0);    // speed
-    dmx_set_channel(addr + 5, 70);   // color
-    dmx_set_channel(addr + 6, 0);    // gobo
-    dmx_set_channel(addr + 7, 250);  // dimmer
-    dmx_set_channel(addr + 8, 0);    // shutter
+    /* Create tasks */
+    xTaskCreate(dmx_task, "DMX Task", 1024, NULL, 3, NULL);
+    xTaskCreate(scene_task, "Scene Task", 1024, NULL, 2, NULL);
 
-    for (int i = 0; i < 100; i++)    // ~2 s @ 20 ms per frame
-    {
-        dmx_send_frame();
-        Cy_SysLib_Delay(20);
-    }
+    /* Start scheduler */
+    vTaskStartScheduler();
 
-    // Scene 2
-    for (int i = 1; i <= 512; i++) dmx_buffer[i] = 0;
-
-    dmx_set_channel(addr + 0, 150);
-    dmx_set_channel(addr + 1, 150);
-    dmx_set_channel(addr + 2, 0);
-    dmx_set_channel(addr + 3, 0);
-    dmx_set_channel(addr + 4, 0);
-    dmx_set_channel(addr + 5, 15);   // andere kleur
-    dmx_set_channel(addr + 6, 0);
-    dmx_set_channel(addr + 7, 250);
-    dmx_set_channel(addr + 8, 0);
-
-    for (int i = 0; i < 100; i++)
-    {
-        dmx_send_frame();
-        Cy_SysLib_Delay(20);
-    }
-}
-
+    for (;;);
 }
