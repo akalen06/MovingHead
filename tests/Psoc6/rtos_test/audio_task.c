@@ -11,11 +11,6 @@
 /* === EXTERN FROM MAIN === */
 extern QueueHandle_t dmxCommandQueue;
 
-/* === DMX STRUCT (must match colleague code!) === */
-typedef struct {
-    uint16_t address;
-    uint8_t channel_values[9];
-} dmx_command_t;
 
 /* === AUDIO CONFIG === */
 #define FRAME_SIZE          256
@@ -71,6 +66,22 @@ static void pdm_isr(void *arg, cyhal_pdm_pcm_event_t event)
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
+// led inits
+static void leds_init(void)
+{
+    cyhal_gpio_init(CYBSP_LED_RGB_RED,   CYHAL_GPIO_DIR_OUTPUT, CYHAL_GPIO_DRIVE_STRONG, 1);
+    cyhal_gpio_init(CYBSP_LED_RGB_GREEN, CYHAL_GPIO_DIR_OUTPUT, CYHAL_GPIO_DRIVE_STRONG, 1);
+    cyhal_gpio_init(CYBSP_LED_RGB_BLUE,  CYHAL_GPIO_DIR_OUTPUT, CYHAL_GPIO_DRIVE_STRONG, 1);
+}
+
+// leds rgb set
+static void set_rgb(uint8_t r, uint8_t g, uint8_t b)
+{
+    cyhal_gpio_write(CYBSP_LED_RGB_RED,   r);
+    cyhal_gpio_write(CYBSP_LED_RGB_GREEN, g);
+    cyhal_gpio_write(CYBSP_LED_RGB_BLUE,  b);
+}
+
 /* === CLOCK INIT === */
 static void clock_init(void)
 {
@@ -111,6 +122,7 @@ static void send_beat(void)
     uint8_t color = rand() % 3;
 
     cmd.channel_values[0] = 255; // intensity
+   
 
     switch(color)
     {
@@ -148,6 +160,7 @@ void audio_task(void *arg)
 
     clock_init();
     timer_init();
+    leds_init();
 
     cyhal_pdm_pcm_init(&pdm_pcm, P10_5, P10_4, &audio_clock, &pdm_cfg);
     cyhal_pdm_pcm_register_callback(&pdm_pcm, pdm_isr, NULL);
@@ -158,6 +171,14 @@ void audio_task(void *arg)
 
     cyhal_pdm_pcm_start(&pdm_pcm);
     cyhal_pdm_pcm_read_async(&pdm_pcm, audio_frame, FRAME_SIZE);
+    
+    set_rgb(0,1,1);
+	vTaskDelay(pdMS_TO_TICKS(500));
+	set_rgb(1,0,1);
+	vTaskDelay(pdMS_TO_TICKS(500));
+	set_rgb(1,1,0);
+	vTaskDelay(pdMS_TO_TICKS(500));
+	set_rgb(1,1,1);
 
     for (;;)
     {
@@ -183,8 +204,28 @@ void audio_task(void *arg)
                 (now - last_beat_time > pdMS_TO_TICKS(REFRACTORY_MS)))
             {
                 last_beat_time = now;
-                send_beat();
-            }
+                //kinda broken rn fix later
+                //send_beat();
+                
+           	
+			    // DEBUG LED
+			    uint8_t color;
+			    uint8_t prev = color;
+			    color = rand() % 4;
+			    
+			    if(color == prev && color != 0)
+			        --color;
+			    else if (color == prev)
+			        color++;
+			
+			    switch(color)
+			    {
+			        case 0: set_rgb(0,1,1); break; // rood
+			        case 1: set_rgb(1,0,1); break; // groen
+			        case 2: set_rgb(1,1,0); break; // blauw
+			        case 3: set_rgb(0,0,0); break; // all
+			    }
+			}
 
             cyhal_pdm_pcm_read_async(&pdm_pcm, audio_frame, FRAME_SIZE);
         }

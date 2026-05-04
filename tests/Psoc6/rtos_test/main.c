@@ -28,12 +28,7 @@ static uint8_t dmx_buffer[DMX_UNIVERSE_SIZE];
 
 /* FreeRTOS */
 QueueHandle_t dmxCommandQueue;
-
-/* DMX command struct */
-typedef struct {
-    uint16_t address;
-    uint8_t channel_values[9];
-} dmx_command_t;
+;
 
 /* Error handler */
 static void handle_error(void)
