@@ -126,22 +126,40 @@ static void send_beat(void)
 
     switch(color)
     {
-        case 0: // red
-            cmd.channel_values[1] = 255;
-            cmd.channel_values[2] = 0;
-            cmd.channel_values[3] = 0;
+        case 0:
+            cmd.channel_values[0] = 50;
+	        cmd.channel_values[1] = 128;
+	        cmd.channel_values[2] = 0;
+	        cmd.channel_values[3] = 0;
+	        cmd.channel_values[4] = 0;
+	        cmd.channel_values[5] = 20;
+	        cmd.channel_values[6] = 0;
+	        cmd.channel_values[7] = 250;
+	        cmd.channel_values[8] = 0;
             break;
 
-        case 1: // green
-            cmd.channel_values[1] = 0;
-            cmd.channel_values[2] = 255;
-            cmd.channel_values[3] = 0;
+        case 1:
+            cmd.channel_values[0] = 150;
+	        cmd.channel_values[1] = 255;
+	        cmd.channel_values[2] = 0;
+	        cmd.channel_values[3] = 0;
+	        cmd.channel_values[4] = 0;
+	        cmd.channel_values[5] = 50;
+	        cmd.channel_values[6] = 0;
+	        cmd.channel_values[7] = 250;
+	        cmd.channel_values[8] = 0;
             break;
 
-        case 2: // blue
-            cmd.channel_values[1] = 0;
-            cmd.channel_values[2] = 0;
-            cmd.channel_values[3] = 255;
+        case 2:
+            cmd.channel_values[0] = 255;
+	        cmd.channel_values[1] = 200;
+	        cmd.channel_values[2] = 0;
+	        cmd.channel_values[3] = 0;
+	        cmd.channel_values[4] = 0;
+	        cmd.channel_values[5] = 60;
+	        cmd.channel_values[6] = 0;
+	        cmd.channel_values[7] = 250;
+	        cmd.channel_values[8] = 0;
             break;
     }
 
@@ -205,7 +223,7 @@ void audio_task(void *arg)
             {
                 last_beat_time = now;
                 //kinda broken rn fix later
-                //send_beat();
+                send_beat();
                 
            	
 			    // DEBUG LED

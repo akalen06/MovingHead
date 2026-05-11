@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "FreeRTOS.h"
+#include "cyhal_psoc6_01_124_bga.h"
 #include "task.h"
 #include "queue.h"
 #include "dmx.h"
@@ -66,8 +67,8 @@ static cy_rslt_t dmx_uart_init(void)
     };
 
     result = cyhal_uart_init(&uart_obj,
-                             CYBSP_DEBUG_UART_TX,
-                             CYBSP_DEBUG_UART_RX,
+                             P8_1, //tx
+                             P8_0, //rx
                              NC, NC,
                              NULL,
                              &uart_config);
@@ -87,18 +88,18 @@ static void dmx_send_break_mab(void)
 {
     cyhal_uart_free(&uart_obj);
 
-    cyhal_gpio_init(CYBSP_DEBUG_UART_TX,
+    cyhal_gpio_init(P8_1,
                     CYHAL_GPIO_DIR_OUTPUT,
                     CYHAL_GPIO_DRIVE_STRONG,
                     1);
 
-    cyhal_gpio_write(CYBSP_DEBUG_UART_TX, 0);
+    cyhal_gpio_write(P8_1, 0);
     Cy_SysLib_DelayUs(DMX_BREAK_US);
 
-    cyhal_gpio_write(CYBSP_DEBUG_UART_TX, 1);
+    cyhal_gpio_write(P8_1, 1);
     Cy_SysLib_DelayUs(DMX_MAB_US);
 
-    cyhal_gpio_free(CYBSP_DEBUG_UART_TX);
+    cyhal_gpio_free(P8_1);
 
     if (dmx_uart_init() != CY_RSLT_SUCCESS)
         handle_error();
@@ -203,14 +204,14 @@ int main(void)
         handle_error();
 
     /* Create queue */
-    dmxCommandQueue = xQueueCreate(5, sizeof(dmx_command_t));
+    dmxCommandQueue = xQueueCreate(1, sizeof(dmx_command_t));
     if (dmxCommandQueue == NULL)
         handle_error();
 
     /* Create tasks */
-    xTaskCreate(dmx_task, "DMX Task", 1024, NULL, 3, NULL);
-    xTaskCreate(scene_task, "Scene Task", 1024, NULL, 2, NULL);
-	xTaskCreate(audio_task, "Audio Task", 1024, NULL, 2, NULL);
+    xTaskCreate(dmx_task, "DMX Task", 1024, NULL, 2, NULL);
+    //xTaskCreate(scene_task, "Scene Task", 1024, NULL, 3, NULL);
+	xTaskCreate(audio_task, "Audio Task", 1024, NULL, 1, NULL);
 	
 	
     /* Start scheduler */
