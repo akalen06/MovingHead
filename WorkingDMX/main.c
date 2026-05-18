@@ -4,10 +4,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "semphr.h"
 
 /* =========================
  * DMX parameters
@@ -36,7 +40,7 @@
  * 9 Shutter/Strobe
  * ========================= */
 
-/* Color Wheel examples */
+/* Color Wheel */
 #define COLOR_WHITE         5
 #define COLOR_RED           16
 #define COLOR_ORANGE        27
@@ -46,7 +50,7 @@
 #define COLOR_CYAN          71
 #define COLOR_PURPLE        82
 
-/* Gobo Wheel examples */
+/* Gobo Wheel */
 #define GOBO_OPEN           0
 #define GOBO_1              20
 #define GOBO_2              36
@@ -63,20 +67,40 @@
 #define STROBE_FAST         220
 
 /* =========================
- * UART object + buffer
+ * DMX UART pins
+ * P9_1 = TX (confirmed working, wired to RS485 module).
+ * P9_0 = RX (declared but not physically used, DMX is TX-only).
+ * NOTE: pins are intentionally swapped vs port order — P9_1 is TX
+ * because the SCB mux on this kit maps TX to the odd pin on port 9.
  * ========================= */
-static cyhal_uart_t uart_obj;
+#define DMX_TX_PIN          P9_1
+#define DMX_RX_PIN          P9_0
+
+/* =========================
+ * CLI UART
+ * Uses the KitProg3 USB-UART bridge (CYBSP_DEBUG_UART_TX/RX).
+ * No extra wiring needed — appears as a COM port over the existing
+ * USB cable. Open at 115200 8N1 in any serial terminal.
+ * ========================= */
+#define CLI_TX_PIN          CYBSP_DEBUG_UART_TX
+#define CLI_RX_PIN          CYBSP_DEBUG_UART_RX
+#define CLI_BAUDRATE        115200
+#define CLI_LINE_BUF_LEN    64
+
+/* =========================
+ * UART objects + buffers
+ * ========================= */
+static cyhal_uart_t dmx_uart_obj;
+static cyhal_uart_t cli_uart_obj;
 static uint8_t dmx_buffer[DMX_UNIVERSE_SIZE];
 
 /* =========================
- * Hardware timer voor break/MAB
- * Vervangt de destructieve UART-free/re-init + busy-wait aanpak.
+ * Hardware timer for break/MAB
  * ========================= */
 static cyhal_timer_t break_timer;
 static volatile bool break_done = false;
 static volatile bool mab_done   = false;
 
-/* Timer callback: stuurt de GPIO-state machine verder */
 static void break_timer_isr(void *callback_arg, cyhal_timer_event_t event)
 {
     (void)callback_arg;
@@ -84,13 +108,9 @@ static void break_timer_isr(void *callback_arg, cyhal_timer_event_t event)
 
     if (!break_done)
     {
-        /* BREAK voorbij: lijn hoog (MAB) */
-        cyhal_gpio_write(CYBSP_DEBUG_UART_TX, 1);
+        cyhal_gpio_write(DMX_TX_PIN, 1);
         break_done = true;
 
-        /* Herstart timer voor MAB-duur.
-         * Frequentie is al 1 MHz (ingesteld in dmx_timer_init),
-         * dus enkel herconfigureren en starten volstaat. */
         cyhal_timer_stop(&break_timer);
 
         const cyhal_timer_cfg_t mab_cfg = {
@@ -106,23 +126,43 @@ static void break_timer_isr(void *callback_arg, cyhal_timer_event_t event)
     }
     else
     {
-        /* MAB voorbij */
         mab_done = true;
         cyhal_timer_stop(&break_timer);
     }
 }
 
 /* =========================
- * FreeRTOS
+ * FreeRTOS handles
  * ========================= */
-static QueueHandle_t dmxCommandQueue;
+static QueueHandle_t    dmxCommandQueue;
+static QueueHandle_t    speedEventQueue;
 
-/*
- * FIX: speed-state wordt niet langer gedeeld via een volatile variabele
- * tussen ISR en task.  De ISR stuurt nu een bericht via een aparte
- * single-element queue, zodat er geen race condition mogelijk is.
- */
-static QueueHandle_t speedEventQueue;
+/* ---- shared state (protected by mutex) ---- */
+typedef struct
+{
+    uint8_t  speed;          /* speed_state_t value   */
+    uint32_t scene_index;    /* current scene index   */
+    uint8_t  ch[PICOSPOT_CHANNELS]; /* last channel values */
+    uint32_t frame_count;    /* total DMX frames sent */
+} cli_state_t;
+
+static cli_state_t      g_state;
+static SemaphoreHandle_t g_state_mutex;
+
+/* CLI command type sent from CLI task to scene task */
+typedef enum
+{
+    CLI_CMD_SET_MODE,
+    CLI_CMD_SET_SCENE,
+} cli_cmd_type_t;
+
+typedef struct
+{
+    cli_cmd_type_t type;
+    uint32_t       value;
+} cli_task_cmd_t;
+
+static QueueHandle_t cliCmdQueue; /* CLI task -> scene task */
 
 /* =========================
  * DMX command struct
@@ -160,11 +200,11 @@ typedef enum
     SPEED_STATE_COUNT
 } speed_state_t;
 
-/* =========================
- * Example scenes
- * ========================= */
+static const char *speed_names[] = { "SLOW", "NORMAL", "FAST" };
 
-/* Startscene: wit, naar boven, rustig */
+/* =========================
+ * Scenes
+ * ========================= */
 static const scene_t base_scene =
 {
     .pan        = 128,
@@ -180,48 +220,15 @@ static const scene_t base_scene =
 
 static const scene_t scenes[] =
 {
-    /* Scene 1: center, cyan */
-    {
-        .pan = 128, .tilt = 128,
-        .pan_fine = 0, .tilt_fine = 0,
-        .move_speed = 0,
-        .color = COLOR_CYAN,
-        .gobo = GOBO_OPEN,
-        .dimmer = 250,
-        .shutter = SHUTTER_OPEN
-    },
-    /* Scene 2: slightly off-center, red */
-    {
-        .pan = 150, .tilt = 150,
-        .pan_fine = 0, .tilt_fine = 0,
-        .move_speed = 0,
-        .color = COLOR_RED,
-        .gobo = GOBO_OPEN,
-        .dimmer = 250,
-        .shutter = SHUTTER_OPEN
-    },
-    /* Scene 3: blue + gobo */
-    {
-        .pan = 80, .tilt = 170,
-        .pan_fine = 0, .tilt_fine = 0,
-        .move_speed = 20,
-        .color = COLOR_BLUE,
-        .gobo = GOBO_3,
-        .dimmer = 255,
-        .shutter = SHUTTER_OPEN
-    },
-    /* Scene 4: purple + fast strobe */
-    {
-        .pan = 200, .tilt = 70,
-        .pan_fine = 0, .tilt_fine = 0,
-        .move_speed = 10,
-        .color = COLOR_PURPLE,
-        .gobo = GOBO_1,
-        .dimmer = 255,
-        .shutter = STROBE_FAST
-    }
+    { .pan=128,.tilt=128,.pan_fine=0,.tilt_fine=0,.move_speed=0,
+      .color=COLOR_CYAN,  .gobo=GOBO_OPEN,.dimmer=250,.shutter=SHUTTER_OPEN },
+    { .pan=150,.tilt=150,.pan_fine=0,.tilt_fine=0,.move_speed=0,
+      .color=COLOR_RED,   .gobo=GOBO_OPEN,.dimmer=250,.shutter=SHUTTER_OPEN },
+    { .pan=80, .tilt=170,.pan_fine=0,.tilt_fine=0,.move_speed=20,
+      .color=COLOR_BLUE,  .gobo=GOBO_3,  .dimmer=255,.shutter=SHUTTER_OPEN },
+    { .pan=200,.tilt=70, .pan_fine=0,.tilt_fine=0,.move_speed=10,
+      .color=COLOR_PURPLE,.gobo=GOBO_1,  .dimmer=255,.shutter=STROBE_FAST  }
 };
-
 #define SCENE_COUNT   (sizeof(scenes) / sizeof(scenes[0]))
 
 /* =========================
@@ -234,7 +241,7 @@ static void handle_error(void)
 }
 
 /* =========================
- * DMX buffer init
+ * DMX buffer
  * ========================= */
 static void dmx_init_buffer(void)
 {
@@ -243,18 +250,14 @@ static void dmx_init_buffer(void)
         dmx_buffer[i] = 0;
 }
 
-/* =========================
- * Set channel
- * ========================= */
 static void dmx_set_channel(uint16_t ch, uint8_t value)
 {
-    if (ch < 1 || ch > 512)
-        return;
+    if (ch < 1 || ch > 512) return;
     dmx_buffer[ch] = value;
 }
 
 /* =========================
- * UART init
+ * DMX UART init
  * ========================= */
 static cy_rslt_t dmx_uart_init(void)
 {
@@ -270,71 +273,218 @@ static cy_rslt_t dmx_uart_init(void)
         .rx_buffer_size = 0
     };
 
-    result = cyhal_uart_init(&uart_obj,
-                             CYBSP_DEBUG_UART_TX,
-                             CYBSP_DEBUG_UART_RX,
+    result = cyhal_uart_init(&dmx_uart_obj,
+                             DMX_TX_PIN,
+                             DMX_RX_PIN,
                              NC, NC,
                              NULL,
                              &uart_config);
-    if (result != CY_RSLT_SUCCESS)
-        return result;
+    if (result != CY_RSLT_SUCCESS) return result;
 
-    result = cyhal_uart_set_baud(&uart_obj, DMX_BAUDRATE, &actual_baud);
-    if (result != CY_RSLT_SUCCESS)
-        return result;
-
-    return CY_RSLT_SUCCESS;
+    result = cyhal_uart_set_baud(&dmx_uart_obj, DMX_BAUDRATE, &actual_baud);
+    return result;
 }
 
 /* =========================
- * Hardware timer init voor break/MAB
+ * CLI UART init
+ * ========================= */
+static cy_rslt_t cli_uart_init(void)
+{
+    cy_rslt_t result;
+    uint32_t  actual_baud;
+
+    const cyhal_uart_cfg_t cli_cfg =
+    {
+        .data_bits      = 8,
+        .stop_bits      = 1,
+        .parity         = CYHAL_UART_PARITY_NONE,
+        .rx_buffer      = NULL,
+        .rx_buffer_size = 0
+    };
+
+    result = cyhal_uart_init(&cli_uart_obj,
+                             CLI_TX_PIN, CLI_RX_PIN,
+                             NC, NC,
+                             NULL,
+                             &cli_cfg);
+    if (result != CY_RSLT_SUCCESS) return result;
+
+    result = cyhal_uart_set_baud(&cli_uart_obj, CLI_BAUDRATE, &actual_baud);
+    return result;
+}
+
+/* =========================
+ * CLI printf helper
+ * Sends a formatted string over the CLI UART.
+ * ========================= */
+static void cli_print(const char *fmt, ...)
+{
+    char buf[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    size_t len = strlen(buf);
+    cyhal_uart_write(&cli_uart_obj, (uint8_t *)buf, &len);
+}
+
+/* =========================
+ * CLI getchar (blocking, 1 byte)
+ * ========================= */
+static char cli_getchar(void)
+{
+    uint8_t c;
+    size_t len = 1;
+    while (cyhal_uart_read(&cli_uart_obj, &c, &len) != CY_RSLT_SUCCESS || len == 0)
+    {
+        len = 1;
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    return (char)c;
+}
+
+/* =========================
+ * CLI: show status
+ * ========================= */
+static void cli_cmd_status(void)
+{
+    cli_state_t snap;
+
+    xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+    snap = g_state;
+    xSemaphoreGive(g_state_mutex);
+
+    cli_print("\r\n=== PicoSpot 20 Status ===\r\n");
+    cli_print("  Mode       : %s\r\n", speed_names[snap.speed]);
+    if (snap.speed != SPEED_FAST)
+        cli_print("  Scene      : %lu / %lu\r\n", snap.scene_index + 1, (uint32_t)SCENE_COUNT);
+    else
+        cli_print("  Scene      : SWEEP (auto)\r\n");
+    cli_print("  Frames sent: %lu\r\n", snap.frame_count);
+    cli_print("  DMX ch (addr %d):\r\n", PICOSPOT_ADDRESS);
+    cli_print("    1 Pan          : %3d\r\n", snap.ch[0]);
+    cli_print("    2 Tilt         : %3d\r\n", snap.ch[1]);
+    cli_print("    3 Pan fine     : %3d\r\n", snap.ch[2]);
+    cli_print("    4 Tilt fine    : %3d\r\n", snap.ch[3]);
+    cli_print("    5 P/T Speed    : %3d\r\n", snap.ch[4]);
+    cli_print("    6 Color Wheel  : %3d\r\n", snap.ch[5]);
+    cli_print("    7 Gobo Wheel   : %3d\r\n", snap.ch[6]);
+    cli_print("    8 Dimmer       : %3d\r\n", snap.ch[7]);
+    cli_print("    9 Shutter/Strb : %3d\r\n", snap.ch[8]);
+    cli_print("==========================\r\n");
+}
+
+/* =========================
+ * CLI: show help
+ * ========================= */
+static void cli_cmd_help(void)
+{
+    cli_print("\r\nCommands:\r\n");
+    cli_print("  status              - show current state\r\n");
+    cli_print("  mode slow           - switch to SLOW mode  (2 s/scene)\r\n");
+    cli_print("  mode normal         - switch to NORMAL mode (1 s/scene)\r\n");
+    cli_print("  mode fast           - switch to FAST sweep mode\r\n");
+    cli_print("  scene <0-%d>         - jump to scene (slow/normal only)\r\n", (int)(SCENE_COUNT - 1));
+    cli_print("  help                - this message\r\n\r\n");
+}
+
+/* =========================
+ * CLI: parse and dispatch one line
+ * ========================= */
+static void cli_process_line(char *line)
+{
+    /* Trim trailing whitespace */
+    size_t l = strlen(line);
+    while (l > 0 && (line[l-1] == '\r' || line[l-1] == '\n' || line[l-1] == ' '))
+        line[--l] = '\0';
+
+    if (l == 0) return;
+
+    if (strcmp(line, "status") == 0)
+    {
+        cli_cmd_status();
+    }
+    else if (strcmp(line, "help") == 0)
+    {
+        cli_cmd_help();
+    }
+    else if (strncmp(line, "mode ", 5) == 0)
+    {
+        const char *arg = line + 5;
+        cli_task_cmd_t cmd;
+        cmd.type = CLI_CMD_SET_MODE;
+
+        if (strcmp(arg, "slow") == 0)
+            cmd.value = SPEED_SLOW;
+        else if (strcmp(arg, "normal") == 0)
+            cmd.value = SPEED_NORMAL;
+        else if (strcmp(arg, "fast") == 0)
+            cmd.value = SPEED_FAST;
+        else
+        {
+            cli_print("  Unknown mode '%s'. Use: slow | normal | fast\r\n", arg);
+            return;
+        }
+
+        xQueueSend(cliCmdQueue, &cmd, pdMS_TO_TICKS(100));
+        cli_print("  Mode -> %s\r\n", speed_names[cmd.value]);
+    }
+    else if (strncmp(line, "scene ", 6) == 0)
+    {
+        int idx = atoi(line + 6);
+        if (idx < 0 || idx >= (int)SCENE_COUNT)
+        {
+            cli_print("  Scene index out of range (0-%d)\r\n", (int)(SCENE_COUNT - 1));
+            return;
+        }
+        cli_task_cmd_t cmd = { .type = CLI_CMD_SET_SCENE, .value = (uint32_t)idx };
+        xQueueSend(cliCmdQueue, &cmd, pdMS_TO_TICKS(100));
+        cli_print("  Scene -> %d\r\n", idx);
+    }
+    else
+    {
+        cli_print("  Unknown command '%s'. Type 'help'.\r\n", line);
+    }
+}
+
+/* =========================
+ * Hardware timer init
  * ========================= */
 static void dmx_timer_init(void)
 {
     cy_rslt_t result;
 
-    /* Initialiseer timer op 1 MHz zodat elke tick = 1 µs.
-     * Die frequentie geldt voor zowel de BREAK- als de MAB-fase. */
     result = cyhal_timer_init(&break_timer, NC, NULL);
-    if (result != CY_RSLT_SUCCESS)
-        handle_error();
+    if (result != CY_RSLT_SUCCESS) handle_error();
 
-    /* Stel basisfrequentie in op 1 MHz (1 tick = 1 µs) */
     const cyhal_timer_cfg_t init_cfg = {
         .compare_value = 0,
-        .period        = DMX_BREAK_US - 1,   /* wordt overschreven voor gebruik */
+        .period        = DMX_BREAK_US - 1,
         .direction     = CYHAL_TIMER_DIR_UP,
         .is_compare    = false,
         .is_continuous = false,
         .value         = 0
     };
     cyhal_timer_configure(&break_timer, &init_cfg);
-
     cyhal_timer_register_callback(&break_timer, break_timer_isr, NULL);
     cyhal_timer_enable_event(&break_timer,
-                             CYHAL_TIMER_IRQ_TERMINAL_COUNT,
-                             5,
-                             true);
+                             CYHAL_TIMER_IRQ_TERMINAL_COUNT, 5, true);
 }
 
 /* =========================
- * BREAK + MAB via hardware timer
+ * Break + MAB
  * ========================= */
 static void dmx_send_break_mab(void)
 {
-    /* Geef UART vrij zodat we de TX-pin als GPIO kunnen gebruiken */
-    cyhal_uart_free(&uart_obj);
-
-    cyhal_gpio_init(CYBSP_DEBUG_UART_TX,
+    cyhal_uart_free(&dmx_uart_obj);
+    cyhal_gpio_init(DMX_TX_PIN,
                     CYHAL_GPIO_DIR_OUTPUT,
-                    CYHAL_GPIO_DRIVE_STRONG,
-                    0); /* direct laag = begin BREAK */
+                    CYHAL_GPIO_DRIVE_STRONG, 0);
 
-    /* Reset state flags */
     break_done = false;
     mab_done   = false;
 
-    /* Configureer timer voor BREAK-duur (DMX_BREAK_US µs bij 1 MHz) */
     const cyhal_timer_cfg_t break_cfg = {
         .compare_value = 0,
         .period        = DMX_BREAK_US - 1,
@@ -346,12 +496,9 @@ static void dmx_send_break_mab(void)
     cyhal_timer_configure(&break_timer, &break_cfg);
     cyhal_timer_start(&break_timer);
 
-    /* Wacht tot MAB klaar is */
     while (!mab_done) {}
 
-    /* Geef GPIO vrij en herstel UART */
-    cyhal_gpio_free(CYBSP_DEBUG_UART_TX);
-
+    cyhal_gpio_free(DMX_TX_PIN);
     if (dmx_uart_init() != CY_RSLT_SUCCESS)
         handle_error();
 }
@@ -362,9 +509,8 @@ static void dmx_send_break_mab(void)
 static void dmx_send_frame(void)
 {
     size_t len = DMX_UNIVERSE_SIZE;
-
     dmx_send_break_mab();
-    cyhal_uart_write(&uart_obj, dmx_buffer, &len);
+    cyhal_uart_write(&dmx_uart_obj, dmx_buffer, &len);
 }
 
 /* =========================
@@ -385,7 +531,6 @@ static void dmx_apply_command(const dmx_command_t *cmd)
 static void build_scene_command(const scene_t *scene, dmx_command_t *cmd)
 {
     cmd->address = PICOSPOT_ADDRESS;
-
     cmd->channel_values[0] = scene->pan;
     cmd->channel_values[1] = scene->tilt;
     cmd->channel_values[2] = scene->pan_fine;
@@ -409,7 +554,6 @@ static void button_isr(void *callback_arg, cyhal_gpio_event_t event)
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint8_t dummy = 1;
-
     xQueueSendFromISR(speedEventQueue, &dummy, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
@@ -423,19 +567,13 @@ static void button_init(void)
 
     result = cyhal_gpio_init(CYBSP_USER_BTN,
                              CYHAL_GPIO_DIR_INPUT,
-                             CYHAL_GPIO_DRIVE_PULLUP,
-                             1);
-    if (result != CY_RSLT_SUCCESS)
-        handle_error();
+                             CYHAL_GPIO_DRIVE_PULLUP, 1);
+    if (result != CY_RSLT_SUCCESS) handle_error();
 
     button_cb_data.callback     = button_isr;
     button_cb_data.callback_arg = NULL;
     cyhal_gpio_register_callback(CYBSP_USER_BTN, &button_cb_data);
-
-    cyhal_gpio_enable_event(CYBSP_USER_BTN,
-                            CYHAL_GPIO_IRQ_FALL,
-                            5,
-                            true);
+    cyhal_gpio_enable_event(CYBSP_USER_BTN, CYHAL_GPIO_IRQ_FALL, 5, true);
 }
 
 /* =========================
@@ -449,7 +587,6 @@ static void dmx_task(void *pvParameters)
     dmx_command_t new_cmd;
 
     dmx_init_buffer();
-
     build_scene_command(&base_scene, &current_cmd);
     dmx_apply_command(&current_cmd);
 
@@ -459,76 +596,71 @@ static void dmx_task(void *pvParameters)
         {
             current_cmd = new_cmd;
             dmx_apply_command(&current_cmd);
+
+            /* Update shared state for CLI */
+            xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+            memcpy(g_state.ch, current_cmd.channel_values, PICOSPOT_CHANNELS);
+            xSemaphoreGive(g_state_mutex);
         }
 
         dmx_send_frame();
+
+        xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+        g_state.frame_count++;
+        xSemaphoreGive(g_state_mutex);
+
         vTaskDelay(pdMS_TO_TICKS(DMX_REFRESH_MS));
     }
 }
 
 /* =========================
- * Sweep-effect (SPEED_FAST)
- *
- * Aangepast:
- * - kleinere panstap
- * - iets langere tick
- *
- * Daardoor krijgt de fixture net genoeg tijd om effectief
- * van 0 naar 255 en terug te bewegen, i.p.v. constant achter
- * de referentie aan te lopen.
+ * Sweep effect (SPEED_FAST)
  * ========================= */
-#define SWEEP_PAN_STEP    4
-#define SWEEP_TILT_MIN    90
-#define SWEEP_TILT_MAX    165
-#define SWEEP_TILT_STEP   1
-#define SWEEP_STEP_MS     40
-
-/* Sweep-state: bijgehouden tussen ticks */
-typedef struct
-{
-    int16_t pan;
-    int8_t  pan_dir;   /* +1 of -1 */
-    int16_t tilt;
-    int8_t  tilt_dir;  /* +1 of -1 */
-    uint8_t color_idx;
-    uint8_t color_tick; /* wissel kleur elke N ticks */
-} sweep_state_t;
+#define SWEEP_PAN_STEP      4
+#define SWEEP_TILT_MIN      90
+#define SWEEP_TILT_MAX      165
+#define SWEEP_TILT_STEP     1
+#define SWEEP_STEP_MS       40
+#define SWEEP_COLOR_COUNT   6
+#define SWEEP_COLOR_TICKS   10
 
 static const uint8_t sweep_colors[] = {
     COLOR_RED, COLOR_BLUE, COLOR_PURPLE,
     COLOR_CYAN, COLOR_GREEN, COLOR_ORANGE
 };
-#define SWEEP_COLOR_COUNT  6
-#define SWEEP_COLOR_TICKS  10   /* nieuwe kleur elke 10 ticks */
+
+typedef struct
+{
+    int16_t pan;
+    int8_t  pan_dir;
+    int16_t tilt;
+    int8_t  tilt_dir;
+    uint8_t color_idx;
+    uint8_t color_tick;
+} sweep_state_t;
 
 static void sweep_state_init(sweep_state_t *s)
 {
-    s->pan        = 0;
-    s->pan_dir    = 1;
-    s->tilt       = SWEEP_TILT_MIN;
-    s->tilt_dir   = 1;
-    s->color_idx  = 0;
-    s->color_tick = 0;
+    s->pan = 0; s->pan_dir = 1;
+    s->tilt = SWEEP_TILT_MIN; s->tilt_dir = 1;
+    s->color_idx = 0; s->color_tick = 0;
 }
 
 static void sweep_state_tick(sweep_state_t *s, dmx_command_t *cmd)
 {
-    /* Pan: trager heen en weer zodat de fixture volledig kan volgen */
     s->pan += s->pan_dir * SWEEP_PAN_STEP;
     if (s->pan >= 255) { s->pan = 255; s->pan_dir = -1; }
     if (s->pan <= 0)   { s->pan = 0;   s->pan_dir =  1; }
 
-    /* Tilt: swingt traag als een slinger */
     s->tilt += s->tilt_dir * SWEEP_TILT_STEP;
     if (s->tilt >= SWEEP_TILT_MAX) { s->tilt = SWEEP_TILT_MAX; s->tilt_dir = -1; }
     if (s->tilt <= SWEEP_TILT_MIN) { s->tilt = SWEEP_TILT_MIN; s->tilt_dir =  1; }
 
-    /* Kleur: wisselt elke SWEEP_COLOR_TICKS ticks */
     s->color_tick++;
     if (s->color_tick >= SWEEP_COLOR_TICKS)
     {
         s->color_tick = 0;
-        s->color_idx  = (s->color_idx + 1) % SWEEP_COLOR_COUNT;
+        s->color_idx = (s->color_idx + 1) % SWEEP_COLOR_COUNT;
     }
 
     cmd->address = PICOSPOT_ADDRESS;
@@ -536,7 +668,7 @@ static void sweep_state_tick(sweep_state_t *s, dmx_command_t *cmd)
     cmd->channel_values[1] = (uint8_t)s->tilt;
     cmd->channel_values[2] = 0;
     cmd->channel_values[3] = 0;
-    cmd->channel_values[4] = 0;    /* pan/tilt movement fast */
+    cmd->channel_values[4] = 0;
     cmd->channel_values[5] = sweep_colors[s->color_idx];
     cmd->channel_values[6] = GOBO_OPEN;
     cmd->channel_values[7] = 255;
@@ -550,59 +682,146 @@ static void scene_task(void *pvParameters)
 {
     (void) pvParameters;
 
-    dmx_command_t cmd;
-    uint32_t      scene_index = 0;
-    speed_state_t speed       = SPEED_SLOW;
-    uint8_t       btn_event;
-    sweep_state_t sweep;
+    dmx_command_t  cmd;
+    uint32_t       scene_index = 0;
+    speed_state_t  speed       = SPEED_SLOW;
+    uint8_t        btn_event;
+    cli_task_cmd_t cli_cmd;
+    sweep_state_t  sweep;
     sweep_state_init(&sweep);
 
-    /* Stuur base scene als startpunt */
     build_scene_command(&base_scene, &cmd);
     xQueueSend(dmxCommandQueue, &cmd, portMAX_DELAY);
 
     for (;;)
     {
-        /* Verwerk eventuele knopdruk (niet-blokkerend) */
+        /* --- Physical button: cycle to next mode --- */
         if (xQueueReceive(speedEventQueue, &btn_event, 0) == pdPASS)
         {
             speed_state_t prev = speed;
-            speed = (speed_state_t)(speed + 1);
-            if (speed >= SPEED_STATE_COUNT)
-                speed = SPEED_SLOW;
+            speed = (speed_state_t)((speed + 1) % SPEED_STATE_COUNT);
 
-            if (prev == SPEED_FAST)
-                scene_index = 0;
+            if (prev == SPEED_FAST) scene_index = 0;
+            if (speed == SPEED_FAST) sweep_state_init(&sweep);
 
-            if (speed == SPEED_FAST)
-                sweep_state_init(&sweep);
+            xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+            g_state.speed = (uint8_t)speed;
+            g_state.scene_index = scene_index;
+            xSemaphoreGive(g_state_mutex);
+
+            cli_print("\r\n[BTN] Mode -> %s\r\n> ", speed_names[speed]);
         }
 
+        /* --- CLI command queue --- */
+        if (xQueueReceive(cliCmdQueue, &cli_cmd, 0) == pdPASS)
+        {
+            if (cli_cmd.type == CLI_CMD_SET_MODE)
+            {
+                speed_state_t prev = speed;
+                speed = (speed_state_t)cli_cmd.value;
+
+                if (prev == SPEED_FAST) scene_index = 0;
+                if (speed == SPEED_FAST) sweep_state_init(&sweep);
+
+                xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+                g_state.speed = (uint8_t)speed;
+                g_state.scene_index = scene_index;
+                xSemaphoreGive(g_state_mutex);
+            }
+            else if (cli_cmd.type == CLI_CMD_SET_SCENE)
+            {
+                if (speed != SPEED_FAST)
+                {
+                    scene_index = cli_cmd.value;
+
+                    xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+                    g_state.scene_index = scene_index;
+                    xSemaphoreGive(g_state_mutex);
+
+                    /* Send immediately */
+                    build_scene_command(&scenes[scene_index], &cmd);
+                    xQueueSend(dmxCommandQueue, &cmd, portMAX_DELAY);
+                }
+                else
+                {
+                    cli_print("  (scene select ignored in FAST mode)\r\n> ");
+                }
+            }
+        }
+
+        /* --- Run current mode --- */
         if (speed == SPEED_FAST)
         {
-            /* Pan beweegt nu trager zodat 0..255 echt haalbaar is */
             sweep_state_tick(&sweep, &cmd);
             xQueueSend(dmxCommandQueue, &cmd, portMAX_DELAY);
             vTaskDelay(pdMS_TO_TICKS(SWEEP_STEP_MS));
         }
         else
         {
-            uint32_t delay_ms;
-            switch (speed)
-            {
-                case SPEED_SLOW:   delay_ms = 2000; break;
-                case SPEED_NORMAL: delay_ms = 1000; break;
-                default:           delay_ms = 2000; break;
-            }
+            uint32_t delay_ms = (speed == SPEED_NORMAL) ? 1000 : 2000;
 
             build_scene_command(&scenes[scene_index], &cmd);
             xQueueSend(dmxCommandQueue, &cmd, portMAX_DELAY);
 
-            scene_index++;
-            if (scene_index >= SCENE_COUNT)
-                scene_index = 0;
+            scene_index = (scene_index + 1) % SCENE_COUNT;
+
+            xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+            g_state.scene_index = scene_index;
+            xSemaphoreGive(g_state_mutex);
 
             vTaskDelay(pdMS_TO_TICKS(delay_ms));
+        }
+    }
+}
+
+/* =========================
+ * CLI Task
+ * ========================= */
+static void cli_task(void *pvParameters)
+{
+    (void) pvParameters;
+
+    char line_buf[CLI_LINE_BUF_LEN];
+    int  line_pos = 0;
+
+    /* Banner */
+    cli_print("\r\n");
+    cli_print("  *** PicoSpot 20 DMX Controller ***\r\n");
+    cli_print("  PSOC6 / ModusToolbox  |  FreeRTOS\r\n");
+    cli_print("  Type 'help' for commands.\r\n\r\n");
+    cli_print("> ");
+
+    for (;;)
+    {
+        char c = cli_getchar();
+
+        /* Echo the character */
+        size_t one = 1;
+        cyhal_uart_write(&cli_uart_obj, (uint8_t *)&c, &one);
+
+        if (c == '\r' || c == '\n')
+        {
+            if (line_pos > 0)
+            {
+                line_buf[line_pos] = '\0';
+                cli_print("\r\n");
+                cli_process_line(line_buf);
+                line_pos = 0;
+            }
+            cli_print("> ");
+        }
+        else if (c == '\b' || c == 0x7F) /* Backspace */
+        {
+            if (line_pos > 0)
+            {
+                line_pos--;
+                /* Erase character on terminal */
+                cli_print("\b \b");
+            }
+        }
+        else if (line_pos < CLI_LINE_BUF_LEN - 1)
+        {
+            line_buf[line_pos++] = c;
         }
     }
 }
@@ -615,27 +834,35 @@ int main(void)
     cy_rslt_t result;
 
     result = cybsp_init();
-    if (result != CY_RSLT_SUCCESS)
-        handle_error();
+    if (result != CY_RSLT_SUCCESS) handle_error();
 
     __enable_irq();
 
-    if (dmx_uart_init() != CY_RSLT_SUCCESS)
-        handle_error();
+    if (dmx_uart_init() != CY_RSLT_SUCCESS) handle_error();
+    if (cli_uart_init() != CY_RSLT_SUCCESS) handle_error();
 
     dmx_timer_init();
     button_init();
 
+    /* Shared state */
+    memset(&g_state, 0, sizeof(g_state));
+    g_state_mutex = xSemaphoreCreateMutex();
+    if (g_state_mutex == NULL) handle_error();
+
+    /* Queues */
     dmxCommandQueue = xQueueCreate(5, sizeof(dmx_command_t));
-    if (dmxCommandQueue == NULL)
-        handle_error();
+    if (dmxCommandQueue == NULL) handle_error();
 
     speedEventQueue = xQueueCreate(1, sizeof(uint8_t));
-    if (speedEventQueue == NULL)
-        handle_error();
+    if (speedEventQueue == NULL) handle_error();
 
-    xTaskCreate(dmx_task,   "DMX Task",   1024, NULL, 2, NULL);
-    xTaskCreate(scene_task, "Scene Task", 1024, NULL, 3, NULL);
+    cliCmdQueue = xQueueCreate(4, sizeof(cli_task_cmd_t));
+    if (cliCmdQueue == NULL) handle_error();
+
+    /* Tasks */
+    xTaskCreate(dmx_task,   "DMX",   1024, NULL, 2, NULL);
+    xTaskCreate(scene_task, "Scene", 1024, NULL, 3, NULL);
+    xTaskCreate(cli_task,   "CLI",   1024, NULL, 1, NULL);
 
     vTaskStartScheduler();
 
