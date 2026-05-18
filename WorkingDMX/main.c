@@ -13,6 +13,9 @@
 #include "queue.h"
 #include "semphr.h"
 
+#include "audio.h"
+#include "shared.h"
+
 /* =========================
  * DMX parameters
  * ========================= */
@@ -137,32 +140,15 @@ static void break_timer_isr(void *callback_arg, cyhal_timer_event_t event)
 static QueueHandle_t    dmxCommandQueue;
 static QueueHandle_t    speedEventQueue;
 
-/* ---- shared state (protected by mutex) ---- */
-typedef struct
-{
-    uint8_t  speed;          /* speed_state_t value   */
-    uint32_t scene_index;    /* current scene index   */
-    uint8_t  ch[PICOSPOT_CHANNELS]; /* last channel values */
-    uint32_t frame_count;    /* total DMX frames sent */
-} cli_state_t;
+/* ---- shared state definitions (types in shared.h) ---- */
+cli_state_t       g_state;
+SemaphoreHandle_t g_state_mutex;
 
-static cli_state_t      g_state;
-static SemaphoreHandle_t g_state_mutex;
+/* Exported to audio.c — audio task posts CLI_CMD_SET_MODE here
+ * and updates g_state.bpm via g_state_mutex.                   */
+QueueHandle_t     cliCmdQueue;   /* CLI/audio task -> scene task */
 
-/* CLI command type sent from CLI task to scene task */
-typedef enum
-{
-    CLI_CMD_SET_MODE,
-    CLI_CMD_SET_SCENE,
-} cli_cmd_type_t;
-
-typedef struct
-{
-    cli_cmd_type_t type;
-    uint32_t       value;
-} cli_task_cmd_t;
-
-static QueueHandle_t cliCmdQueue; /* CLI task -> scene task */
+static const char *speed_names[] = { "SLOW", "NORMAL", "FAST" };
 
 /* =========================
  * DMX command struct
@@ -189,18 +175,7 @@ typedef struct
     uint8_t shutter;
 } scene_t;
 
-/* =========================
- * Speed state machine
- * ========================= */
-typedef enum
-{
-    SPEED_SLOW = 0,
-    SPEED_NORMAL,
-    SPEED_FAST,
-    SPEED_STATE_COUNT
-} speed_state_t;
-
-static const char *speed_names[] = { "SLOW", "NORMAL", "FAST" };
+/* speed_names for CLI display */
 
 /* =========================
  * Scenes
@@ -317,7 +292,7 @@ static cy_rslt_t cli_uart_init(void)
  * CLI printf helper
  * Sends a formatted string over the CLI UART.
  * ========================= */
-static void cli_print(const char *fmt, ...)
+void cli_print(const char *fmt, ...)
 {
     char buf[256];
     va_list args;
@@ -362,6 +337,10 @@ static void cli_cmd_status(void)
     else
         cli_print("  Scene      : SWEEP (auto)\r\n");
     cli_print("  Frames sent: %lu\r\n", snap.frame_count);
+    if (snap.bpm > 0)
+        cli_print("  BPM        : %lu\r\n", snap.bpm);
+    else
+        cli_print("  BPM        : --  (no beat detected yet)\r\n");
     cli_print("  DMX ch (addr %d):\r\n", PICOSPOT_ADDRESS);
     cli_print("    1 Pan          : %3d\r\n", snap.ch[0]);
     cli_print("    2 Tilt         : %3d\r\n", snap.ch[1]);
@@ -856,13 +835,14 @@ int main(void)
     speedEventQueue = xQueueCreate(1, sizeof(uint8_t));
     if (speedEventQueue == NULL) handle_error();
 
-    cliCmdQueue = xQueueCreate(4, sizeof(cli_task_cmd_t));
+    cliCmdQueue = xQueueCreate(1, sizeof(cli_task_cmd_t));
     if (cliCmdQueue == NULL) handle_error();
 
     /* Tasks */
     xTaskCreate(dmx_task,   "DMX",   1024, NULL, 2, NULL);
     xTaskCreate(scene_task, "Scene", 1024, NULL, 3, NULL);
     xTaskCreate(cli_task,   "CLI",   1024, NULL, 1, NULL);
+    xTaskCreate(audio_task, "Audio", 2048, NULL, 2, NULL);
 
     vTaskStartScheduler();
 
