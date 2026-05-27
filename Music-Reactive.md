@@ -61,7 +61,9 @@ The code for sending DMX can be found [here](./tests/DXMTest/)
 The image below shows the [movinghead](./docs/datasheets/c_372642_v2_r1_en_online.pdf) working with the rasperry pi pico. ![movinghead working with raspberry pi](<./docs/images/movingheadWithPico.jpeg>)
 
 ### Read DMX
-kfbkzblbei
+The tests were conducted by playing music through the PDM microphone to evaluate its response to lower-frequency sounds. The objective was to verify that the low-pass filter could successfully isolate low-frequency audio signals and use them to control the user LEDs on the PSoC 6, causing them to blink in response to the detected beats.
+
+After confirming the LED functionality, a moving head light was connected to the PSoC 6 to further test the system. The moving head was programmed to change its movement speed based on the detected BPM (beats per minute) of the music. As the BPM increased or decreased, the moving head would accordingly speed up or slow down, demonstrating real-time audio-reactive control.
 
 ## Getting Started
 
