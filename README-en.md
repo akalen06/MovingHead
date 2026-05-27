@@ -1,8 +1,8 @@
-# Name of the Project
+# Music-Reactive DMX Controller
 
-![Overzicht](./resources/media/banner.png)
+![Overzicht](./docs/images/banner.png)
 
-## Music-Reactive DMX Controller
+## Overview
 
 This project implements an embedded system on a PSoC6 that drives a DMX moving head and reacts to music input. The main purpose is to translate audio features such as beat, volume, and frequency content into expressive light movements, colors, and intensities.
 
@@ -40,6 +40,9 @@ Follow any additional instructions shown in the terminal or on the interface.
     - CY8CKIT-028-TFT (TFT Display Shield Board)
     - Pico-2CH-RS485 (DMX module)
     - Raspberry Pi Pico
+    - RSD-150C-5 (DC-DC Power supply)
+    - RSP-2400-48 (AC-DC Switching power supply)
+
 
 - **Software**: overview of languages, libraries and tools used.
     - ModusToolbox
