@@ -10,7 +10,7 @@
 |-----------|-----------|---------|-----------|--------|
 | Microcontroller | PSoC 6 | Main controller | [Link](/docs/datasheets/infineon-cy8ckit-062-wifi-bt-psoc-6-wifi-bt-pioneer-kit-guide-usermanual-en.pdf) | 1 |
 | Microcontroller | Raspberry Pi Pico | DMX Slave | [Link](/docs/datasheets/RP-008307-DS-1-pico-datasheet.pdf) | 1 |
-| Module | Pico-2CH-RS485 | UART To RS485 | [Link](/docs/datasheets/Pico2CHRS485.md) | 2 |
+| Module | Pico-2CH-RS485 | UART To RS485 | [Link](/docs/datasheets/DOC035253319.pdf) | 2 |
 | Light | Pico Spot 20 LED | Movinghead | [Link](/docs/datasheets/c_372642_v2_r1_en_online.pdf) | 1 |
 | LED | WS2812B | LED Strip | [Link] | ~10m |
 
@@ -50,4 +50,3 @@
 - **Logica level:** [3.3V]
 
 ---
-
