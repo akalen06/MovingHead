@@ -4,29 +4,15 @@
 
 ---
 
-## 📂 Structure
-
-```
-hardware/
-├── README.md              # This file
-└── schematics/           # Schematics
-    └── [project].kicad_sch
-```
-
----
-
 ## 🧩 List of components
-
-> **Update this list with all hardware components**
 
 | Component | Type/Model | Function | Datasheet | Amount |
 |-----------|-----------|---------|-----------|--------|
 | Microcontroller | PSoC 6 | Main controller | [Link](/docs/datasheets/infineon-cy8ckit-062-wifi-bt-psoc-6-wifi-bt-pioneer-kit-guide-usermanual-en.pdf) | 1 |
 | Microcontroller | Raspberry Pi Pico | DMX Slave | [Link](/docs/datasheets/RP-008307-DS-1-pico-datasheet.pdf) | 1 |
-| Module | Pico-2CH-RS485 | UART To RS485 | [Link](/docs/datasheets/Pico2CHRS485.md) | 1 |
-| Light | Pico Spot 20 LED | Movinghead | [Link](/docs/datasheets/PicoSpot20LED.md) | 1 |
-| LED | WS2812B | LED Strip | [Link] | / |
-| ... | ... | ... | ... | ... |
+| Module | Pico-2CH-RS485 | UART To RS485 | [Link](/docs/datasheets/DOC035253319.pdf) | 2 |
+| Light | Pico Spot 20 LED | Movinghead | [Link](/docs/datasheets/c_372642_v2_r1_en_online.pdf) | 1 |
+| LED | WS2812B | LED Strip | [Link] | ~10m |
 
 
 
@@ -37,43 +23,30 @@ hardware/
 **Schematic overview:**
 ![](../docs/images/Software%20Diagram%20Music.jpg)
 
-> **Voeg hier een afbeelding of diagram toe waarin de bedrading en verbindingen van de componenten worden weergegeven.**
->
-> - Voor week 1-2: Een handmatige schets is OK
-> - Later: Fritzing of KiCAD schematic export (PNG of PDF) 
-
 ---
 
-## ⚡ Specifications
+## ⚡ Specifications (LED Wall)
 
 ### Power
-- **Voltage:** [bijv. 5V DC via USB]
-- **Current:** [bijv. max 500mA]
-- **Power supply:** [bijv. USB powerbank]
+- **Voltage:** [5V DC]
+- **Current:** [19A]
+- **Power supply:** [External power supply]
 
 ### Communication
-- **Protocollen:** [bijv. UART, I²C, SPI]
+- **Protocollen:** [UART, SPI]
 - **Pins:** [lijst belangrijke pinnen]
-- **Logica level:** [bijv. 3.3V]
+- **Logica level:** [3.3V]
+
+## ⚡ Specifications (DMX Controller)
+
+### Power
+- **Voltage:** [5V DC via USB]
+- **Current:** [max 500mA]
+- **Power supply:** [PC USB port]
+
+### Communication
+- **Protocollen:** [UART]
+- **Pins:** [P5.0 (Default TX), P9.0(Free GPIO TX), P10.5(PDM data), P10.4(PDM CLK)]
+- **Logica level:** [3.3V]
 
 ---
-
-## 📝 Aantekeningen
-
-**Belangrijke opmerkingen:**
-- ...
-- ...
-
-**Bekende problemen:**
-- ...
-- ...
-
----
-
-## ✅ Checklist
-
-- [ ] Componentenlijst volledig ingevuld
-- [ ] Schema/blokdiagram toegevoegd
-- [ ] Datasheets lokaal opgeslagen in `/docs/datasheets/`
-- [ ] KiCAD project werkend
-- [ ] Specificaties gedocumenteerd

@@ -1,3 +1,53 @@
+# ModusToolbox/PSoC6 specifics
+armgcc/
+iar/
+mdk/
+CortexM*/
+codegentemp/
+Generated_Source/
+build/
+mtb/
+libs/
+bsps/
+# PSoC Creator (if mixed)
+*.cywrk.*
+*.cydsn/*
+!*.c
+!*.h
+!*.cydwr
+!*.cyprj
+!TopDesign/
+# General C/Embedded
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+*.su
+*.idb
+*.pdb
+*.d
+*.ko
+*.obj
+*.ilk
+*.lib
+*.a
+*.dll
+*.so
+*.exe
+*.out
+*.app
+# IDE/Debug
+.vscode/
+.vs/
+.idea/
+*.swp
+*.swo
+# OS/Other
+.DS_Store
+Thumbs.db
+*.log
+
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
