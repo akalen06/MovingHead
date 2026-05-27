@@ -8,6 +8,7 @@ Generated_Source/
 build/
 mtb/
 libs/
+bsps/
 # PSoC Creator (if mixed)
 *.cywrk.*
 *.cydsn/*
