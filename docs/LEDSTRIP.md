@@ -1,13 +1,13 @@
 # LED Strip: Power & Calculation
 
-The LED wall is equiped with a **5V WS2813 LED strip**.  
+The LED wall is equiped with a **5V WS2812b LED strip**.  
 The LED's are mounted in a square as seen in the picture below.
 
 ![LED Wall](./images/ledWall.png)
 
 ## Specifications
 
-- **Type:** WS2813
+- **Type:** WS2812b
 - **Voltage:** 5V DC
 - **LED's per square:** 36
 - **Squares:** 9
@@ -18,7 +18,7 @@ The LED's are mounted in a square as seen in the picture below.
 
 ## Power calculation
 
-A WS2813 LED uses a maximum of:
+A WS2812b LED uses a maximum of:
 
 - **60 mA per LED** (Full white, RGB 100%)
 

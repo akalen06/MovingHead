@@ -38,8 +38,8 @@ These timings ensure reliable lighting control and synchronization with music.
 
 This project includes **three capture files** for analysis:
 
-- **Two captures** from a *Chamsys MQ70* console (real-world production use) - [Capture 1 ](./chamsystest.sal) - [Capture 2](./chamsystestlocateµ.sal)
-- **One capture** from custom test code (validation and comparison) [Capture](./Captures.md)
+- **Two captures** from a *Chamsys MQ70* console (real-world production use) - [chamsystest](./chamsystest.sal) - [chamsystestlocate](./chamsystestlocate.sal)
+- **One capture** from custom test code (validation and comparison) [beamCapture](./beamCapture.sal)
 
 ### Analysis Tools
 
