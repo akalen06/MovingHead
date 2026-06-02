@@ -52,7 +52,7 @@ We studied the DMX protocol to better understand how the signal is structured an
 After gaining a better understanding of the signal format, we captured a real DMX signal from a professional lighting desk using a logic analyzer. The capture below shows the recorded waveform:
 
 ![image](./docs/images/capture.png)
-![video](./docs/videos/dmxTestConsole.mp)
+![video](./docs/videos/dmxTestConsole.mp4)
 
 
 A deeper and more in detail dmx timings file and the capture files can be found in the [DMX Timings](./tests/Captures/DMXTimings.md) file.
