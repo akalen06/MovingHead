@@ -93,7 +93,7 @@ After confirming the LED functionality, a moving head light was connected to the
 2. Connect the shield to the **DMX** interface.
 3. Power the LED wall with **5V**.
 
-More info on the LED wall setup can be found [here](./firmware/ledWallController/README.md)
+More info on the LED wall setup can be found [here](./firmware/ledWallController/ledWallController.md)
 More info on the LED wall power setup can be found [here](./docs/LEDSTRIP.md)
 More info on the LED wall DMX mode can be found [here](./docs/ledWallDMXMapping.md)
 
@@ -143,7 +143,7 @@ The LED wall is controlled via DMX. It receives DMX values and converts them int
 #### Status:
 At the moment, the LED wall controller can receive DMX data. However, due to an issue, it cannot yet send data to the LED strip.
 
-More details can be found in this [README](./firmware/ledWallController/README.md), and the code is available in [this](./firmware/ledWallController/) folder.
+More details can be found in this [file](./firmware/ledWallController/ledWallController.md), and the code is available in [this](./firmware/ledWallController/) folder.
 
 
 ### DMX Controller
