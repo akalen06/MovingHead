@@ -34,7 +34,7 @@
 
 ### Communication
 - **Protocollen:** [UART, SPI]
-- **Pins:** [lijst belangrijke pinnen]
+- **Pins:** [Shield connectes all important pins. use free I/O for led strip]
 - **Logica level:** [3.3V]
 
 ## ⚡ Specifications (DMX Controller)
